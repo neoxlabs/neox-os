@@ -1,0 +1,121 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- ── 权限 ──────────────────────────────────────────────
+         每一条都对着一件用户看得见的事. 要不到的时候界面必须如实说,
+         而不是安静地少干一件活. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- 核心页那颗球跟着音量动. 只在那一页开着, 而且**从不写文件** -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <!-- 说话转文字 —— 走系统的识别器, 所以要能看见它 -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService"/>
+        </intent>
+    </queries>
+    <!-- 常驻服务: 它是"早上主动喊你"的全部依赖 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- 手机半夜会重启. 不接这一条的话闹钟在重启之后永久失效 -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <!-- 电池白名单 —— **只是能请他点, 不是替他点**: 系统弹框, 他说了算.
+         不在白名单里, 手机一睡着心跳就停、网就断(2026-09-11 那一夜
+         00:30 到 08:04 一次报到都没有). 见 MainActivity.askBatteryExempt -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
+    <!-- 蓝牙: 只为了知道"车机蓝牙连上了" —— 那是"他在开车"最准的一条.
+         **不扫描、不连接任何设备**. 12 以下是老权限, 12 起是 CONNECT -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+    <!-- ── 采集 ──
+         人不动的时候位置只用粗定位(NETWORK_PROVIDER): 城里误差几十米, 而
+         地点判定的半径是 150 米 —— GPS 那点额外精度不会让任何一次判断更对,
+         却是几十倍的电. 见 Collector.kt 开头.
+         FINE 也要: 安卓 10 起拿 WiFi SSID 要它, 而且**人在动的时候**
+         (车上、走路)要开 GPS —— 那时候基站定位几百米的误差答不出"在哪条路". -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <!-- 后台定位: 助理的意义就在于人不看手机的时候它还看得见 -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+    <!-- 读日历: 他已经有的日程不该让他再说一遍。**只读** ——
+         往他的日历里写东西是他没同意过的事 -->
+    <uses-permission android:name="android.permission.READ_CALENDAR"/>
+    <!-- 明网: 容器多半跑在局域网里的一台机器上, 那就是 http -->
+    <application
+        android:label="NeoxPilot"
+        android:usesCleartextTraffic="true"
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <!-- Specifies an Android theme to apply to this Activity as soon as
+                 the Android process has started. This theme is visible to the user
+                 while the Flutter UI initializes. After that, this theme continues
+                 to determine the Window background behind the Flutter UI. -->
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+        <!-- ── 常驻服务 ──
+             dataSync 是因为它干的事就是把 OS 那边的事件同步过来.
+             stopWithTask=false: 用户划掉任务卡多半只是在清后台,
+             他不认为自己关掉了这个助理 -->
+        <service
+            android:name=".KeepAliveService"
+            android:foregroundServiceType="dataSync|location"
+            android:stopWithTask="false"
+            android:exported="false"/>
+        <!-- 读通知 —— **这个 App 权限最大的一件事**.
+             短信验证码、快递、银行、群里谁 @ 了你, 这些事全都以通知的
+             形式经过这台手机, 而它们没有一个有 API.
+             默认关着, 而且开关不在我们手里: 系统那一页要用户亲手点.
+             见 NoticeReader 文件头那三条闸. -->
+        <service
+            android:name=".NoticeReader"
+            android:label="Neox 读通知"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService"/>
+            </intent-filter>
+        </service>
+        <receiver
+            android:name=".BootReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+            </intent-filter>
+        </receiver>
+        <!-- Don't delete the meta-data below.
+             This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+    </application>
+    <!-- Required to query activities that can process text, see:
+         https://developer.android.com/training/package-visibility and
+         https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.
+
+         In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT"/>
+            <data android:mimeType="text/plain"/>
+        </intent>
+    </queries>
+</manifest>

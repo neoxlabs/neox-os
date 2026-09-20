@@ -1,0 +1,834 @@
+{
+  "runtimeFs": [
+    "/usr",
+    "/bin",
+    "/sbin",
+    "/lib",
+    "/etc",
+    "/proc"
+  ],
+  "paths": {
+    "unshare": "/usr/bin/unshare",
+    "sh": "/bin/sh",
+    "landlockRun": "/usr/local/bin/landlock-run",
+    "cgroupRoot": "/sys/fs/cgroup",
+    "ip": "/sbin/ip"
+  },
+  "cases": [
+    {
+      "name": "空",
+      "caps": [],
+      "plan": {
+        "runtimeFs": [
+          "/usr",
+          "/bin",
+          "/sbin",
+          "/lib",
+          "/etc",
+          "/proc"
+        ],
+        "fs": [],
+        "net": [],
+        "allowSubprocess": false,
+        "cgroup": {
+          "memoryMaxBytes": 536870912,
+          "pidsMax": 64
+        },
+        "requires": [
+          "fs-enforce",
+          "resource-limit",
+          "net-isolate"
+        ],
+        "runtimeDevices": [
+          "/dev/null",
+          "/dev/zero",
+          "/dev/urandom",
+          "/dev/random",
+          "/dev/tty"
+        ]
+      },
+      "argv": [
+        "/bin/sh",
+        "-c",
+        "echo $$ > '/sys/fs/cgroup/neox-os/p1/cgroup.procs' && exec \"$@\"",
+        "neox-os",
+        "/usr/bin/unshare",
+        "--mount",
+        "--pid",
+        "--fork",
+        "--mount-proc",
+        "--net",
+        "/usr/local/bin/landlock-run",
+        "--ro",
+        "/usr",
+        "--ro",
+        "/bin",
+        "--ro",
+        "/sbin",
+        "--ro",
+        "/lib",
+        "--ro",
+        "/etc",
+        "--ro",
+        "/proc",
+        "--rw",
+        "/dev/null",
+        "--rw",
+        "/dev/zero",
+        "--rw",
+        "/dev/urandom",
+        "--rw",
+        "/dev/random",
+        "--rw",
+        "/dev/tty",
+        "--ro",
+        "/usr/bin/node",
+        "--rw",
+        "/run/neox-os/p1.sock",
+        "--",
+        "/usr/bin/node",
+        "app.js"
+      ],
+      "env": {
+        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "HOME": "/work",
+        "LANG": "C.UTF-8",
+        "NEOX_ABI_SOCKET": "/run/neox-os/p1.sock",
+        "NEOX_ABI_TOKEN": "",
+        "NEOX_PID": "p1",
+        "MY": "1"
+      }
+    },
+    {
+      "name": "只读",
+      "caps": [
+        {
+          "axis": "read",
+          "scope": "/src"
+        }
+      ],
+      "plan": {
+        "runtimeFs": [
+          "/usr",
+          "/bin",
+          "/sbin",
+          "/lib",
+          "/etc",
+          "/proc"
+        ],
+        "fs": [
+          {
+            "path": "/work/src",
+            "access": [
+              "read"
+            ]
+          }
+        ],
+        "net": [],
+        "allowSubprocess": false,
+        "cgroup": {
+          "memoryMaxBytes": 536870912,
+          "pidsMax": 64
+        },
+        "requires": [
+          "fs-enforce",
+          "resource-limit",
+          "net-isolate"
+        ],
+        "runtimeDevices": [
+          "/dev/null",
+          "/dev/zero",
+          "/dev/urandom",
+          "/dev/random",
+          "/dev/tty"
+        ]
+      },
+      "argv": [
+        "/bin/sh",
+        "-c",
+        "echo $$ > '/sys/fs/cgroup/neox-os/p1/cgroup.procs' && exec \"$@\"",
+        "neox-os",
+        "/usr/bin/unshare",
+        "--mount",
+        "--pid",
+        "--fork",
+        "--mount-proc",
+        "--net",
+        "/usr/local/bin/landlock-run",
+        "--ro",
+        "/usr",
+        "--ro",
+        "/bin",
+        "--ro",
+        "/sbin",
+        "--ro",
+        "/lib",
+        "--ro",
+        "/etc",
+        "--ro",
+        "/proc",
+        "--rw",
+        "/dev/null",
+        "--rw",
+        "/dev/zero",
+        "--rw",
+        "/dev/urandom",
+        "--rw",
+        "/dev/random",
+        "--rw",
+        "/dev/tty",
+        "--ro",
+        "/work/src",
+        "--ro",
+        "/usr/bin/node",
+        "--rw",
+        "/run/neox-os/p1.sock",
+        "--",
+        "/usr/bin/node",
+        "app.js"
+      ],
+      "env": {
+        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "HOME": "/work",
+        "LANG": "C.UTF-8",
+        "NEOX_ABI_SOCKET": "/run/neox-os/p1.sock",
+        "NEOX_ABI_TOKEN": "",
+        "NEOX_PID": "p1",
+        "MY": "1"
+      }
+    },
+    {
+      "name": "读写",
+      "caps": [
+        {
+          "axis": "read",
+          "scope": "/src"
+        },
+        {
+          "axis": "write",
+          "scope": "/out"
+        }
+      ],
+      "plan": {
+        "runtimeFs": [
+          "/usr",
+          "/bin",
+          "/sbin",
+          "/lib",
+          "/etc",
+          "/proc"
+        ],
+        "fs": [
+          {
+            "path": "/work/out",
+            "access": [
+              "read",
+              "write"
+            ]
+          },
+          {
+            "path": "/work/src",
+            "access": [
+              "read"
+            ]
+          }
+        ],
+        "net": [],
+        "allowSubprocess": false,
+        "cgroup": {
+          "memoryMaxBytes": 536870912,
+          "pidsMax": 64
+        },
+        "requires": [
+          "fs-enforce",
+          "resource-limit",
+          "net-isolate"
+        ],
+        "runtimeDevices": [
+          "/dev/null",
+          "/dev/zero",
+          "/dev/urandom",
+          "/dev/random",
+          "/dev/tty"
+        ]
+      },
+      "argv": [
+        "/bin/sh",
+        "-c",
+        "echo $$ > '/sys/fs/cgroup/neox-os/p1/cgroup.procs' && exec \"$@\"",
+        "neox-os",
+        "/usr/bin/unshare",
+        "--mount",
+        "--pid",
+        "--fork",
+        "--mount-proc",
+        "--net",
+        "/usr/local/bin/landlock-run",
+        "--ro",
+        "/usr",
+        "--ro",
+        "/bin",
+        "--ro",
+        "/sbin",
+        "--ro",
+        "/lib",
+        "--ro",
+        "/etc",
+        "--ro",
+        "/proc",
+        "--rw",
+        "/dev/null",
+        "--rw",
+        "/dev/zero",
+        "--rw",
+        "/dev/urandom",
+        "--rw",
+        "/dev/random",
+        "--rw",
+        "/dev/tty",
+        "--rw",
+        "/work/out",
+        "--ro",
+        "/work/src",
+        "--ro",
+        "/usr/bin/node",
+        "--rw",
+        "/run/neox-os/p1.sock",
+        "--",
+        "/usr/bin/node",
+        "app.js"
+      ],
+      "env": {
+        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "HOME": "/work",
+        "LANG": "C.UTF-8",
+        "NEOX_ABI_SOCKET": "/run/neox-os/p1.sock",
+        "NEOX_ABI_TOKEN": "",
+        "NEOX_PID": "p1",
+        "MY": "1"
+      }
+    },
+    {
+      "name": "乱序多条",
+      "caps": [
+        {
+          "axis": "read",
+          "scope": "/z"
+        },
+        {
+          "axis": "write",
+          "scope": "/a"
+        },
+        {
+          "axis": "read",
+          "scope": "/m"
+        },
+        {
+          "axis": "net",
+          "scope": "*.example.com"
+        },
+        {
+          "axis": "proc",
+          "scope": "demo"
+        },
+        {
+          "axis": "secret",
+          "scope": "tok"
+        }
+      ],
+      "plan": {
+        "runtimeFs": [
+          "/usr",
+          "/bin",
+          "/sbin",
+          "/lib",
+          "/etc",
+          "/proc"
+        ],
+        "fs": [
+          {
+            "path": "/work/a",
+            "access": [
+              "read",
+              "write"
+            ]
+          },
+          {
+            "path": "/work/m",
+            "access": [
+              "read"
+            ]
+          },
+          {
+            "path": "/work/z",
+            "access": [
+              "read"
+            ]
+          }
+        ],
+        "net": [
+          {
+            "host": "*.example.com"
+          }
+        ],
+        "allowSubprocess": true,
+        "cgroup": {
+          "memoryMaxBytes": 2147483648,
+          "pidsMax": 4096
+        },
+        "requires": [
+          "fs-enforce",
+          "resource-limit",
+          "net-isolate"
+        ],
+        "runtimeDevices": [
+          "/dev/null",
+          "/dev/zero",
+          "/dev/urandom",
+          "/dev/random",
+          "/dev/tty"
+        ]
+      },
+      "argv": [
+        "/bin/sh",
+        "-c",
+        "echo $$ > '/sys/fs/cgroup/neox-os/p1/cgroup.procs' && exec \"$@\"",
+        "neox-os",
+        "/sbin/ip",
+        "netns",
+        "exec",
+        "neox-p1",
+        "/usr/bin/unshare",
+        "--mount",
+        "--pid",
+        "--fork",
+        "--mount-proc",
+        "/usr/local/bin/landlock-run",
+        "--ro",
+        "/usr",
+        "--ro",
+        "/bin",
+        "--ro",
+        "/sbin",
+        "--ro",
+        "/lib",
+        "--ro",
+        "/etc",
+        "--ro",
+        "/proc",
+        "--rw",
+        "/dev/null",
+        "--rw",
+        "/dev/zero",
+        "--rw",
+        "/dev/urandom",
+        "--rw",
+        "/dev/random",
+        "--rw",
+        "/dev/tty",
+        "--rw",
+        "/work/a",
+        "--ro",
+        "/work/m",
+        "--ro",
+        "/work/z",
+        "--ro",
+        "/usr/bin/node",
+        "--rw",
+        "/run/neox-os/p1.sock",
+        "--",
+        "/usr/bin/node",
+        "app.js"
+      ],
+      "env": {
+        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "HOME": "/work",
+        "LANG": "C.UTF-8",
+        "NEOX_ABI_SOCKET": "/run/neox-os/p1.sock",
+        "NEOX_ABI_TOKEN": "",
+        "NEOX_PID": "p1",
+        "MY": "1",
+        "http_proxy": "http://10.77.0.1:3128",
+        "https_proxy": "http://10.77.0.1:3128",
+        "HTTP_PROXY": "http://10.77.0.1:3128",
+        "HTTPS_PROXY": "http://10.77.0.1:3128",
+        "npm_config_proxy": "http://10.77.0.1:3128",
+        "npm_config_https_proxy": "http://10.77.0.1:3128",
+        "no_proxy": "127.0.0.1,localhost,::1",
+        "NO_PROXY": "127.0.0.1,localhost,::1"
+      },
+      "netNS": "neox-p1",
+      "proxyAddr": "10.77.0.1:3128"
+    },
+    {
+      "name": "通配",
+      "caps": [
+        {
+          "axis": "read",
+          "scope": "*"
+        }
+      ],
+      "plan": {
+        "runtimeFs": [
+          "/usr",
+          "/bin",
+          "/sbin",
+          "/lib",
+          "/etc",
+          "/proc"
+        ],
+        "fs": [
+          {
+            "path": "/work",
+            "access": [
+              "read"
+            ]
+          }
+        ],
+        "net": [],
+        "allowSubprocess": false,
+        "cgroup": {
+          "memoryMaxBytes": 536870912,
+          "pidsMax": 64
+        },
+        "requires": [
+          "fs-enforce",
+          "resource-limit",
+          "net-isolate"
+        ],
+        "runtimeDevices": [
+          "/dev/null",
+          "/dev/zero",
+          "/dev/urandom",
+          "/dev/random",
+          "/dev/tty"
+        ]
+      },
+      "argv": [
+        "/bin/sh",
+        "-c",
+        "echo $$ > '/sys/fs/cgroup/neox-os/p1/cgroup.procs' && exec \"$@\"",
+        "neox-os",
+        "/usr/bin/unshare",
+        "--mount",
+        "--pid",
+        "--fork",
+        "--mount-proc",
+        "--net",
+        "/usr/local/bin/landlock-run",
+        "--ro",
+        "/usr",
+        "--ro",
+        "/bin",
+        "--ro",
+        "/sbin",
+        "--ro",
+        "/lib",
+        "--ro",
+        "/etc",
+        "--ro",
+        "/proc",
+        "--rw",
+        "/dev/null",
+        "--rw",
+        "/dev/zero",
+        "--rw",
+        "/dev/urandom",
+        "--rw",
+        "/dev/random",
+        "--rw",
+        "/dev/tty",
+        "--ro",
+        "/work",
+        "--ro",
+        "/usr/bin/node",
+        "--rw",
+        "/run/neox-os/p1.sock",
+        "--",
+        "/usr/bin/node",
+        "app.js"
+      ],
+      "env": {
+        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "HOME": "/work",
+        "LANG": "C.UTF-8",
+        "NEOX_ABI_SOCKET": "/run/neox-os/p1.sock",
+        "NEOX_ABI_TOKEN": "",
+        "NEOX_PID": "p1",
+        "MY": "1"
+      }
+    },
+    {
+      "name": "带内存限额",
+      "caps": [
+        {
+          "axis": "write",
+          "scope": "/out"
+        }
+      ],
+      "plan": {
+        "runtimeFs": [
+          "/usr",
+          "/bin",
+          "/sbin",
+          "/lib",
+          "/etc",
+          "/proc"
+        ],
+        "fs": [
+          {
+            "path": "/work/out",
+            "access": [
+              "read",
+              "write"
+            ]
+          }
+        ],
+        "net": [],
+        "allowSubprocess": false,
+        "cgroup": {
+          "memoryMaxBytes": 268435456,
+          "pidsMax": 64
+        },
+        "requires": [
+          "fs-enforce",
+          "resource-limit",
+          "net-isolate"
+        ],
+        "runtimeDevices": [
+          "/dev/null",
+          "/dev/zero",
+          "/dev/urandom",
+          "/dev/random",
+          "/dev/tty"
+        ]
+      },
+      "argv": [
+        "/bin/sh",
+        "-c",
+        "echo $$ > '/sys/fs/cgroup/neox-os/p1/cgroup.procs' && exec \"$@\"",
+        "neox-os",
+        "/usr/bin/unshare",
+        "--mount",
+        "--pid",
+        "--fork",
+        "--mount-proc",
+        "--net",
+        "/usr/local/bin/landlock-run",
+        "--ro",
+        "/usr",
+        "--ro",
+        "/bin",
+        "--ro",
+        "/sbin",
+        "--ro",
+        "/lib",
+        "--ro",
+        "/etc",
+        "--ro",
+        "/proc",
+        "--rw",
+        "/dev/null",
+        "--rw",
+        "/dev/zero",
+        "--rw",
+        "/dev/urandom",
+        "--rw",
+        "/dev/random",
+        "--rw",
+        "/dev/tty",
+        "--rw",
+        "/work/out",
+        "--ro",
+        "/usr/bin/node",
+        "--rw",
+        "/run/neox-os/p1.sock",
+        "--",
+        "/usr/bin/node",
+        "app.js"
+      ],
+      "env": {
+        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "HOME": "/work",
+        "LANG": "C.UTF-8",
+        "NEOX_ABI_SOCKET": "/run/neox-os/p1.sock",
+        "NEOX_ABI_TOKEN": "",
+        "NEOX_PID": "p1",
+        "MY": "1"
+      }
+    }
+  ],
+  "probes": [
+    "/src/a.ts",
+    "/src",
+    "/srcx/a",
+    "/out/b",
+    "/",
+    "/etc/passwd"
+  ],
+  "hosts": [
+    "api.example.com",
+    "example.com",
+    "a.b.example.com",
+    "evil.com"
+  ],
+  "allows": [
+    {
+      "name": "空",
+      "read": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "write": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "net": [
+        false,
+        false,
+        false,
+        false
+      ]
+    },
+    {
+      "name": "只读",
+      "read": [
+        true,
+        true,
+        false,
+        false,
+        false,
+        false
+      ],
+      "write": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "net": [
+        false,
+        false,
+        false,
+        false
+      ]
+    },
+    {
+      "name": "读写",
+      "read": [
+        true,
+        true,
+        false,
+        true,
+        false,
+        false
+      ],
+      "write": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false
+      ],
+      "net": [
+        false,
+        false,
+        false,
+        false
+      ]
+    },
+    {
+      "name": "乱序多条",
+      "read": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "write": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "net": [
+        true,
+        false,
+        true,
+        false
+      ]
+    },
+    {
+      "name": "通配",
+      "read": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "write": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "net": [
+        false,
+        false,
+        false,
+        false
+      ]
+    },
+    {
+      "name": "带内存限额",
+      "read": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false
+      ],
+      "write": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false
+      ],
+      "net": [
+        false,
+        false,
+        false,
+        false
+      ]
+    }
+  ],
+  "runtimeDevices": [
+    "/dev/null",
+    "/dev/zero",
+    "/dev/urandom",
+    "/dev/random",
+    "/dev/tty"
+  ]
+}

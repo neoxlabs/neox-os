@@ -1,0 +1,15 @@
+{
+  "name": "@neox-os/boot",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "PID 1 — 启动自检 / 信号 / 有序关机",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@neox-os/abi": "0.0.1",
+    "@neox-os/confine": "0.0.1",
+    "@neox-os/init": "0.0.1"
+  }
+}

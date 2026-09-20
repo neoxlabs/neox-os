@@ -1,0 +1,27 @@
+NeoX OS
+Copyright 2026 NeoX Labs
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+This product includes third-party components distributed under their own licenses.
+
+The mobile client performs speech recognition with pre-trained models from the
+k2-fsa/sherpa-onnx project. Those models are NOT redistributed in this repository;
+`mobile/tool/fetch-models.sh` downloads them from their upstream model repositories
+and verifies them by checksum:
+
+  - csukuangfj/sherpa-onnx-streaming-zipformer-small-ctc-zh-int8-2025-04-01
+  - csukuangfj/sherpa-onnx-paraformer-zh-small-2024-03-09
+
+Their terms are those of the upstream repositories. This project grants no license
+to them.
+
+Speech recognition itself runs through the `sherpa_onnx` Dart package
+(k2-fsa/sherpa-onnx, Apache-2.0), declared in `mobile/pubspec.yaml` and resolved by
+the Dart package manager. Other third-party dependencies are declared in
+`package-lock.json`, `mobile/pubspec.lock` and `go/go.sum`, and remain under their
+own licenses.

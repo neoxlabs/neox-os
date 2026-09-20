@@ -1,0 +1,15 @@
+{
+  "name": "@neox-os/confine",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "能力 → 内核强制约束 (landlock / seccomp / cgroup2 / netns). Fail-closed.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@neox-os/abi": "0.0.1"
+  }
+}

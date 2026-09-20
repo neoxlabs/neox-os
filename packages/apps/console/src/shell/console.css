@@ -1,0 +1,1663 @@
+/* NeoxOS 对话客户端 · 设计语言
+ *
+ *   照 Grok Bot 扒出来的三条, 不是我自己的偏好:
+ *
+ *   ① **一种墨色 + 不同 alpha**, 不是各调一个灰.
+ *      它的 token 全长这样: #fcfcfc99 / #fcfcfc66 / #fcfcfc0d …
+ *      浅色主题只把墨色从 #fcfcfc 换成 #141414, 其余一个不动.
+ *      这就是为什么两套主题看着是同一个东西 —— 而"深色一套灰、
+ *      浅色再调一套灰"永远对不齐.
+ *
+ *   ② **尺寸是定死的, 不是估的**: 侧栏头 50px / 会话头 51px(对齐),
+ *      列表项 34px 头像 + 58px 行高 + 8px 内边距 + 9px 间距,
+ *      分组头 30px, 输入壳 radius 16 / padding 9, 圆钮 30×30.
+ *
+ *   ③ **状态是角上一个点, 不是一圈光**. 头像只管身份.
+ */
+:root {
+  --ink: 252 252 252;            /* 深色下的墨色 */
+  --bg: #070707;
+  --bg-subtle: #111111;
+  --bg-elevated: #181818;
+  --accent: #1084fe;
+  --accent-hover: #459ffe;
+  --ok: #00c972;
+  --warn: #ff9800;
+  --bad: #ff5667;
+
+  --text: rgb(var(--ink));
+  --text-2: rgb(var(--ink) / .6);
+  --text-3: rgb(var(--ink) / .4);
+  --text-4: rgb(var(--ink) / .26);
+  --line: rgb(var(--ink) / .05);
+  --line-2: rgb(var(--ink) / .1);
+  --fill-ghost: rgb(var(--ink) / .06);
+  --fill-ghost-2: rgb(var(--ink) / .09);
+  /* 侧栏的"划过"和"选中"是两档独立的值, 不是同一个刻度的两个数.
+     浅色下黑色叠上去比白色叠在深色上更抢眼, 所以要单独压。 */
+  --item-hover: rgb(var(--ink) / .035);
+  --item-on: rgb(var(--ink) / .13);
+  /* 卡面: 深色靠提亮, 浅色靠"比页面更白 + 一层雾一样的投影" */
+  --card: #171717;
+  --card-sunken: #101010;
+  --card-shadow: none;
+  --float-shadow: 0 20px 50px -18px rgb(0 0 0 / .7);
+
+  --r: 10px;      /* radius-lg */
+  --r-shell: 16px;/* radius-2xl */
+  color-scheme: dark;
+}
+:root[data-theme="light"] {
+  --ink: 20 20 20;
+  --bg: #fcfcfc;
+  --bg-subtle: #f7f7f7;
+  --bg-elevated: #ffffff;
+  --item-hover: rgb(var(--ink) / .04);
+  --item-on: rgb(var(--ink) / .075);
+  --card: #ffffff;
+  --card-sunken: #f4f4f5;
+  --card-shadow: 0 1px 2px rgb(20 20 20 / .05), 0 6px 18px -6px rgb(20 20 20 / .10);
+  --float-shadow: 0 2px 6px rgb(20 20 20 / .06), 0 24px 56px -20px rgb(20 20 20 / .22);
+  --accent: #1084fe;
+  --accent-hover: #0c64c1;
+  --ok: #009957;
+  --warn: #c27400;
+  --bad: #c21d2e;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  background: var(--bg); color: var(--text);
+  font: 13.5px/1.62 -apple-system, "SF Pro Text", "PingFang SC", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; }
+
+/**
+ * 滚动条 —— **看得见的时候才存在**.
+ *
+ *   系统那条默认滚动条在这个界面里格格不入: 一道浅色的槽 + 一根实心
+ *   灰条, 自带边框, 占十几像素宽, 而且**一直亮着** —— 侧栏那一列头像
+ *   旁边杵着一根比头像还显眼的灰柱子.
+ *
+ *   这里的做法跟 macOS 的浮层滚动条一个路子: 没有槽、没有边框, 平时
+ *   一根极淡的影子, 鼠标进到这块区域才浮起来, 压在它上面再深一档.
+ *   **宽度不变**(只变颜色): 变宽会让内容跟着重排, 一进一出抖一下.
+ */
+* { scrollbar-width: thin; scrollbar-color: rgb(var(--ink) / .12) transparent; }
+::-webkit-scrollbar { width: 11px; height: 11px; background: transparent; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; border: 0; }
+::-webkit-scrollbar-thumb {
+  /* 靠 border + background-clip 把实际的条收窄成 5px, 两边留出的空
+     是"离边缘的距离" —— 直接写 width 会连带把可点区域也缩掉 */
+  background: rgb(var(--ink) / .10); background-clip: content-box;
+  border: 3px solid transparent; border-radius: 999px;
+}
+:hover::-webkit-scrollbar-thumb { background: rgb(var(--ink) / .2); background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: rgb(var(--ink) / .34); background-clip: content-box; }
+::-webkit-scrollbar-thumb:active { background: rgb(var(--ink) / .42); background-clip: content-box; }
+
+.app { display: grid; grid-template-columns: 252px minmax(0, 1fr); height: 100%; }
+
+/* ── 接入引导(Gate) ──────────────────────────────────────────
+   裸着进来(没带 token)看到的第一页 —— 见 Gate.tsx 文件头 */
+.gate { display: grid; place-items: center; height: 100%; background: var(--bg); }
+.gate__card {
+  width: min(460px, calc(100vw - 48px));
+  display: flex; flex-direction: column; gap: 14px;
+  padding: 36px 34px; border: 1px solid var(--line); border-radius: 16px;
+  background: var(--bg-subtle);
+}
+.gate__brand { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+.gate__mark { height: 26px; width: 26px; }
+.gate__word { display: none; height: 15px; width: auto; }
+.gate__word--dark { display: block; }
+:root[data-theme="light"] .gate__word--dark { display: none; }
+:root[data-theme="light"] .gate__word--light { display: block; }
+.gate__title { margin: 0; font-size: 19px; font-weight: 650; }
+.gate__text { margin: 0; font-size: 13px; line-height: 1.7; color: var(--text-2); }
+.gate__text code { font-size: 12px; padding: 1px 5px; border-radius: 5px; background: var(--fill-ghost); }
+.gate__row { display: flex; gap: 8px; }
+.gate__row--acts { align-items: center; }
+.gate__input {
+  flex: 1; min-width: 0; padding: 9px 12px; font-size: 13px;
+  color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 9px;
+}
+.gate__input:focus { outline: none; border-color: var(--accent); }
+.gate__input--wide { width: 100%; box-sizing: border-box; }
+.gate__go {
+  all: unset; padding: 9px 18px; font-size: 13px; font-weight: 600; cursor: pointer;
+  color: #fff; background: var(--accent); border-radius: 9px; text-align: center;
+}
+.gate__go:hover { background: var(--accent-hover); }
+.gate__go:disabled { opacity: .45; cursor: default; }
+.gate__side {
+  all: unset; padding: 9px 14px; font-size: 13px; cursor: pointer;
+  color: var(--text); border: 1px solid var(--line); border-radius: 9px;
+}
+.gate__side:hover { background: var(--fill-ghost); }
+.gate__side:disabled { opacity: .45; cursor: default; }
+.gate__skip { all: unset; margin-left: auto; font-size: 12px; color: var(--text-3); cursor: pointer; }
+.gate__skip:hover { color: var(--text); text-decoration: underline; }
+.gate__wrong { margin: 0; font-size: 12px; color: #e5534b; }
+.gate__ok { margin: 0; font-size: 12px; color: #3fb950; }
+/* 供应商自报的模型名单: 一排能点的胶囊 —— 模型名是抄不对的东西, 能选就别让人敲 */
+.gate__models { display: flex; flex-wrap: wrap; gap: 6px; max-height: 96px; overflow-y: auto; }
+.gate__chip {
+  all: unset; padding: 4px 10px; font-size: 12px; cursor: pointer;
+  color: var(--text-2); border: 1px solid var(--line); border-radius: 999px;
+}
+.gate__chip:hover { background: var(--fill-ghost); color: var(--text); }
+.gate__chip--on { border-color: var(--accent); color: var(--accent); }
+.gate__note { margin: 0; font-size: 12px; color: var(--text-3); }
+
+/* ── 环境自检(Checkup) ────────────────────────────────────────
+   首启问一次"这台机器能干什么活" —— 见 Checkup.tsx 文件头.
+   骨架借 Gate 的卡(同一扇门的两张脸), 只多一张清单. */
+.checkup__card { width: min(540px, calc(100vw - 48px)); }
+.checkup__list {
+  margin: 0; padding: 0; list-style: none;
+  display: flex; flex-direction: column; gap: 2px;
+  /* 清单长了不该把按钮顶出屏幕 —— 卡本身不动, 清单自己滚 */
+  max-height: min(46vh, 340px); overflow-y: auto;
+  border: 1px solid var(--line); border-radius: var(--r);
+  background: var(--card-sunken); padding: 6px;
+}
+.checkup__row { display: flex; gap: 10px; padding: 9px 8px; border-radius: 8px; }
+.checkup__row--off { background: var(--fill-ghost); }
+/* 状态是角上一个点, 不是一圈光 —— 与列表项那条规矩同源 */
+.checkup__dot {
+  flex: none; width: 7px; height: 7px; margin-top: 6px; border-radius: 50%;
+  background: var(--text-4);
+}
+.checkup__dot--on { background: var(--ok); }
+.checkup__dot--core { background: var(--warn); }
+.checkup__body { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.checkup__head { display: flex; align-items: baseline; gap: 8px; }
+.checkup__name { font-size: 13px; font-weight: 600; color: var(--text); }
+.checkup__where {
+  font-size: 11px; color: var(--text-3); min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.checkup__miss { font-size: 11px; color: var(--text-3); }
+.checkup__miss--core { color: var(--warn); }
+.checkup__what { margin: 0; font-size: 12px; line-height: 1.55; color: var(--text-2); }
+/* 装法是一条**能粘的命令**, 所以它长得像命令, 点一下就进剪贴板 */
+.checkup__fix {
+  all: unset; box-sizing: border-box; cursor: pointer;
+  display: flex; align-items: center; gap: 8px; margin-top: 2px;
+  padding: 5px 8px; border: 1px solid var(--line-2); border-radius: 7px;
+  background: var(--bg); min-width: 0;
+}
+.checkup__fix:hover { border-color: var(--accent); }
+.checkup__fix code {
+  font-size: 11.5px; color: var(--text-2); min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.checkup__copy { margin-left: auto; flex: none; font-size: 11px; color: var(--text-3); }
+.checkup__fix:hover .checkup__copy { color: var(--accent); }
+
+/* ── 左栏 ────────────────────────────────────────────────── */
+.rail { display: flex; flex-direction: column; min-height: 0; background: var(--bg-subtle); border-right: 1px solid var(--line); }
+/* 52px 对齐右边的会话头; 同时是 macOS 拖拽区.
+   左边留 78px 给红绿灯 —— 之前品牌名压在灯上了 */
+.rail__top {
+  display: flex; align-items: center; gap: 8px;
+  /* **这个高度不许被挤**.
+     .rail 是 flex column, 缺省 flex-shrink:1 —— 会话一多, 列表撑不下,
+     两个头就跟着按比例缩水(真机上量到 52 → 34.7). 后果不是"矮了一点":
+     红绿灯是 Electron 按**窗口坐标**固定摆的(trafficLightPosition y:18,
+     中心≈25), 而字标跟着头的中心走 —— 头一缩, 字标中心跑到 17,
+     两者差 8px, 看上去就是灯和品牌名没对齐, 而且**会话越多越歪**.
+     真机上是用户截图指出来的: 页面内截图不含窗口边框, 灯根本不在画面里. */
+  flex-shrink: 0;
+  /* 跟右边会话头**同高**. 早先一个 50 一个 51, 两条分隔线差 1px ——
+     一格像素, 但整条横向就是靠这两条线读出"齐"的 */
+  height: 52px; padding: 0 10px 0 78px;
+  border-bottom: 1px solid var(--line);
+  -webkit-app-region: drag;
+}
+/* 字标.
+ *
+ *   **判据必须跟 app 自己的主题一套**. 早先这里用 prefers-color-scheme,
+ *   而 app 的主题是 :root 默认深色 + [data-theme="light"] 才浅 ——
+ *   两套判据不一致, 于是系统浅色 + app 深色时, 黑底上出现黑字标.
+ *   凡是"跟着主题变"的东西, 判据只能有一个来源.
+ *
+ *   原图 1180×202 ≈ 5.84:1, 按高定死宽度自适应, 不许拉伸.
+ */
+.rail__logo { display: none; height: 13px; width: auto; -webkit-app-region: no-drag; margin-left: auto; margin-right: auto; }
+/* 浏览器模式: 没有红绿灯, 78px 留白没有存在的理由 —— 收回来, 空位给环形 mark */
+.rail__top--web { padding-left: 22px; }
+.rail__mark { height: 20px; width: 20px; flex-shrink: 0; -webkit-app-region: no-drag; }
+/* 深色是缺省 → 用白字那张 */
+.rail__logo--dark { display: block; }
+:root[data-theme="light"] .rail__logo--dark { display: none; }
+:root[data-theme="light"] .rail__logo--light { display: block; }
+
+/* 顶栏图标按钮: 平时无底, 悬停才有 —— 一排常亮的灰方块会抢走字标的位置感 */
+.icon {
+  all: unset; display: grid; place-items: center; width: 26px; height: 26px;
+  border-radius: 7px; color: var(--text-3); cursor: pointer; -webkit-app-region: no-drag;
+}
+.icon:hover { background: var(--fill-ghost); color: var(--text); }
+
+.link { width: 6px; height: 6px; border-radius: 50%; -webkit-app-region: no-drag; }
+.link--connecting { background: var(--warn); }
+.link--down { background: var(--bad); }
+
+/* 项与项之间留 2px: 贴边的两块底色会连成一坨,
+   看不出是"选中的那一条 + 鼠标划过的那一条", 而像一个大方块。 */
+.rail__list { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 4px 12px 24px; display: grid; gap: 5px; align-content: start; }
+.rail__section {
+  display: flex; align-items: center; height: 30px; padding: 8px 8px 6px;
+  color: var(--text-2); font-size: 11.5px;
+}
+.rail__section span { margin-left: 6px; color: var(--text-3); }
+
+.item {
+  all: unset; box-sizing: border-box;
+  /* 四列, 一个子元素一列: 头像 · 正文 · 未读点 · 删除.
+     **列数少一个, 多出来的那个就掉到下一行** —— 早先是三列而子元素有四个,
+     于是带未读点的行(而且只有那几行)被 × 撑高一截, 跟旁边对不齐.
+
+     grid-auto-flow: column 是给以后加东西留的闸: 再多一个子元素也只会
+     多一列, 不会再换行. 这一行的高度不该由子元素个数决定. */
+  display: grid; grid-template-columns: 34px minmax(0, 1fr) 7px 20px;
+  grid-auto-flow: column; gap: 9px; align-items: center;
+  width: 100%; min-height: 58px; padding: 8px; border-radius: var(--r); cursor: pointer;
+}
+/* 划过 vs 选中要**一眼分得开**.
+     早先是 .06 和 .09 —— 差 3%, 两条挨着时根本看不出哪条是选中的。
+     现在划过更淡, 选中除了更实还多一圈描边: 靠两种不同的手段区分,
+     不是靠同一种手段的两个刻度。
+   另: `.item:hover` 是 0,2,0, **特异度压过** `.item--on` 的 0,1,0 ——
+     不把选中态写进 hover 选择器, 鼠标划过选中项时它反而会变暗。 */
+.item:hover { background: var(--item-hover); }
+.item--on, .item--on:hover { background: var(--item-on); box-shadow: inset 0 0 0 1px rgb(var(--ink) / .13); }
+.item__body { display: grid; gap: 4px; min-width: 0; }
+.item__name, .item__preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 房间那个小图标: 跟名字同一行、比名字淡一档 —— 它是个标记, 不是内容 */
+.item__line { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.mark { flex: 0 0 auto; color: var(--text-4); }
+
+.item__name { font-size: 13.5px; }
+.item__preview { color: var(--text-3); font-size: 11.5px; }
+/* 未读: 名字变实, 右边一个点. 不用数字气泡 —— 一队 bot 的消息数
+   本来就没有"读完"这回事, 数字只会变成一个永远清不掉的焦虑源 */
+.item--unread .item__name { font-weight: 600; }
+.item--unread .item__preview { color: var(--text-2); }
+.item__unread { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+/* 读过的行**位置照留**: 不留的话未读那一列会塌掉, × 跟着左右跳 ——
+   一列 bot 里此起彼伏地跳, 比那个点本身还扎眼 */
+.item__unread--off { visibility: hidden; }
+
+/* 视图切换: 两格, 小, 不抢会话列表的注意力 */
+.rail__view { display: flex; gap: 4px; padding: 6px 12px 2px; flex-shrink: 0; }
+.rail__viewbtn {
+  all: unset; flex: 1; text-align: center; padding: 4px 0; border-radius: 7px;
+  color: var(--text-4); font-size: 11.5px; cursor: pointer;
+}
+.rail__viewbtn:hover { color: var(--text-3); background: var(--item-hover); }
+.rail__viewbtn--on { color: var(--text-2); background: var(--fill-ghost); }
+/* 组头: 一行小字, **不是一个能点的东西** —— 它只是个标签.
+   但标签也得看得清: 11px 的 .26 灰是"能认出来那儿有字"而已, 一列扫下来
+   眼睛得使劲 —— 而这一行正是"这摊活是哪个项目"的唯一答案.
+   条数挪进一个小圆底, 跟名字分开, 免得两串数字黏成一坨 */
+.rail__grouphead {
+  display: flex; align-items: center; gap: 6px; padding: 12px 12px 7px;
+  color: var(--text-2); font-size: 12.5px; font-weight: 600; letter-spacing: .01em;
+}
+.rail__grouphead small {
+  padding: 0 5px; border-radius: 5px; background: var(--fill-ghost);
+  color: var(--text-3); font-size: 10.5px; font-weight: 500;
+}
+/* **人在哪个组里干活, 那个组就亮着**: 一列七八个项目, 光看高亮那一行
+   只知道"选的是谁", 不知道"这是哪摊活" */
+.rail__group--here .rail__grouphead { color: var(--text); }
+.rail__group--here .rail__grouphead small { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
+.rail__group + .rail__group { margin-top: 2px; }
+
+.rail__dev { display: flex; flex-direction: column; gap: 5px; padding: 10px 12px; border-top: 1px solid var(--line); }
+.rail__dev button { all: unset; text-align: center; padding: 6px; background: var(--fill-ghost); border-radius: 8px; color: var(--text-3); font-size: 11.5px; cursor: pointer; }
+.rail__dev button:hover { color: var(--text-2); }
+
+/* ── 头像: 圆的, 里面是生成的小家伙 ─────────────────────── */
+.ava { position: relative; display: inline-block; flex: 0 0 auto; }
+.ava__disc { display: block; width: 100%; height: 100%; border-radius: 50%; overflow: hidden; }
+.ava__disc svg { display: block; width: 100%; height: 100%; }
+/* 状态点带一圈跟底色同色的描边 —— 压在头像上也读得清 */
+.ava__dot {
+  position: absolute; right: -1px; bottom: -1px; width: 8px; height: 8px;
+  border-radius: 50%; box-shadow: 0 0 0 2px var(--bg-subtle);
+}
+/* 五档, 每一档对应一个你会做的不同决定 —— 判据在 view/presence.ts.
+   **每种状态都给一个点**, 包括"不在"那种(灰的): 没有点等于"不知道",
+   而不知道和离线是两件事. */
+.ava__dot--online { background: var(--ok); }
+/* 忙碌: 换一个色相而不是只换亮度 —— 一列头像里靠亮度分辨太吃力,
+   而且色盲的人分不出来. 呼吸只是**第二重**线索, 不是唯一的那重 */
+.ava__dot--busy { background: var(--accent); animation: breathe 1.6s ease-in-out infinite; }
+.ava__dot--needs-you { background: var(--warn); }
+.ava__dot--failed { background: var(--bad); }
+/* 不在: 空心 —— 它不该跟"在线"抢注意力, 但必须看得见 */
+.ava__dot--offline { background: var(--bg-subtle); box-shadow: 0 0 0 2px var(--bg-subtle), inset 0 0 0 1.5px var(--text-4); }
+.head .ava__dot--offline, .row .ava__dot--offline { box-shadow: 0 0 0 2px var(--bg), inset 0 0 0 1.5px var(--text-4); }
+@keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+/* 动效关掉时它必须**还能分辨** —— 所以颜色本来就不同, 停下来也不丢信息 */
+@media (prefers-reduced-motion: reduce) { .ava__dot--busy { animation: none; } }
+.head .ava__dot, .row .ava__dot { box-shadow: 0 0 0 2px var(--bg); }
+
+/* ── 主区 ────────────────────────────────────────────────── */
+.main { display: flex; flex-direction: column; min-width: 0; }
+/* 没配 key: 这不是一条"提示", 是"现在什么都干不了".
+   所以它在最上面、有底色、并且**带着那条出路** —— 只说坏消息等于没说 */
+.nokey {
+  display: flex; align-items: center; gap: 12px; padding: 9px 18px;
+  background: color-mix(in srgb, var(--warn) 15%, transparent);
+  border-bottom: 1px solid var(--line);
+}
+.nokey__what { flex: 1 1 auto; color: var(--text-2); font-size: 12.5px; }
+
+.head {
+  display: flex; align-items: center; gap: 9px;
+  height: 52px; padding: 0 16px; border-bottom: 1px solid var(--line);
+  -webkit-app-region: drag;
+}
+.head__name { font-size: 14px; font-weight: 600; }
+.head__state { color: var(--text-3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.timeline { position: relative; flex: 1; min-height: 0; overflow: auto; overflow-anchor: none; contain: strict; }
+.timeline__spacer { position: relative; width: 100%; }
+
+/* flex-wrap 是给时间分隔用的: 它要**独占一整行**摆在头像上面.
+   平时只有 gutter + body 两个孩子, 换行不会发生 —— 加它没有副作用. */
+.row { position: absolute; left: 0; right: 0; display: flex; flex-wrap: wrap; gap: 11px; padding: 1px 26px; contain: layout style; }
+/* 头像中线要对齐**首行文字**的中线.
+   实测差 4px —— 一致地低, 于是整列看着在飘. 用负 margin 提上去,
+   不能改 padding: padding 撑高度, 会把行高一起改了. */
+.row__gutter { flex: 0 0 26px; margin-top: -3px; }
+.row__body { flex: 1; min-width: 0; max-width: 720px; }
+.row__who { color: var(--text-2); font-size: 12px; font-weight: 600; margin-bottom: 2px; }
+.row__line { display: flex; gap: 8px; align-items: baseline; }
+.row__text { flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-word; }
+.row__title { flex: 0 0 auto; color: var(--text-4); font-size: 11.5px; }
+.row__caret { width: 2px; height: 14px; background: var(--text-3); align-self: center; animation: blink 1.1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0 } }
+
+.row--lead { padding-top: 18px; }
+
+/* 时间分隔: 一行小字, 居中, 不抢任何东西.
+   它是**这一行的一部分**(不是单独一行) —— 虚拟滚动按行量高度,
+   单独成行的话高度表和行数组就对不上了. */
+.row__stamp {
+  flex: 0 0 100%;
+  text-align: center;
+  color: var(--text-4);
+  font-size: 11px;
+  padding: 14px 0 10px;
+  user-select: none;
+}
+/* 用户那一侧不占身份位 */
+/* 我说的那一行是**镜像**的: 左边那条头像列让给正文, 右边补一条同宽的,
+   我的脸挂在那儿. 原来右边空着一条 —— 而气泡又被 row__body 的 720px
+   上限按在中间, 于是右边留出一大片没人用的空白, 气泡还离右边老远. */
+.row--heard .row__gutter { display: none; }
+.row--heard .row__gutter--me { display: block; order: 2; }
+.row--heard .row__body { max-width: none; }
+.row--heard .row__line { justify-content: flex-end; }
+.row--heard .row__text {
+  flex: 0 1 auto; width: fit-content; max-width: 78%;
+  padding: 9px 14px; border-radius: var(--r-shell);
+  background: var(--fill-ghost-2);
+}
+.row--thought .row__text { color: var(--text-3); }
+.row--did, .row--note, .row--wake, .row--joined, .row--outcome { padding-top: 1px; padding-bottom: 1px; }
+.row--did .row__text, .row--note .row__text, .row--wake .row__text,
+.row--joined .row__text, .row--outcome .row__text,
+.row--did .row__title, .row--note .row__title, .row--wake .row__title,
+.row--joined .row__title, .row--outcome .row__title { color: var(--text-4); font-size: 11.5px; }
+.row--did .row__text { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 11px; }
+.row--bad .row__title { color: var(--bad); }
+/* 合进主干那一行: **系统行里唯一一个要亮的** —— 主干是所有人共用的
+   那一份, 它变了是这间屋子里最该被看见的一件事 */
+.row--ok .row__title { color: var(--ok); font-weight: 600; }
+.row--ok .row__text { color: var(--text-3); }
+
+/* ── 即时 UI ─────────────────────────────────────────────── */
+.row--widget { padding-top: 8px; padding-bottom: 10px; }
+/* 卡片有下限: 收成内容宽会让进度条只剩 68px, 那条进度就没意义了。
+   媒体卡是例外 —— 它按图的原始尺寸走。 */
+/* ── 卡片基座 ─────────────────────────────────────────────
+ *
+ *   **不描边**. 一圈 1px 的框是最省事也最露怯的做法: 它把"这是一块面"
+ *   这件事说了两遍(底色说过一次, 框又说一次), 而且深浅两套主题下
+ *   那圈灰永远有一套是脏的。分层交给**实底色差**, 浅色再补一层极淡的投影。
+ *
+ *   底色用实色不用 alpha: 叠在别的半透明面上时, alpha 会一层层糊掉,
+ *   算出来的实际颜色跟设计值对不上(这个坑踩过)。
+ */
+.w {
+  min-width: min(260px, 100%); max-width: 420px;
+  padding: 14px 16px; background: var(--card); border-radius: 14px;
+  box-shadow: var(--card-shadow);
+}
+.w--done { opacity: .55; }
+.w__head { font-size: 13.5px; font-weight: 600; margin-bottom: 4px; }
+.w__line { font-family: ui-monospace, monospace; font-size: 12px; color: var(--text-2); }
+/* 理由: 可能是一整段(拉人那张卡上是岗位+为什么), 所以要能换行、
+   给点行距. 它是**决定的依据**, 不是脚注 —— 但也不该抢过标题 */
+.w__why {
+  margin: 6px 0 2px; color: var(--text-3); font-size: 12.5px; line-height: 1.65;
+  /* **不设高度上限**: 这段话就是决定本身. 截一半藏起来, 人要么滚一下
+     才看得见(而看不出有得滚), 要么就在没看全的情况下点了批准 */
+  white-space: pre-wrap;
+}
+.w__actions { display: flex; gap: 7px; margin-top: 12px; }
+.w__actions--wrap { flex-wrap: wrap; }
+.w__btn { all: unset; padding: 6px 14px; border-radius: 8px; background: var(--fill-ghost); color: var(--text-2); cursor: pointer; font-size: 12.5px; }
+.w__btn:hover { color: var(--text); background: var(--fill-ghost-2); }
+.w__btn--primary { background: var(--accent); border-color: transparent; color: #fff; }
+.w__btn--primary:hover { background: var(--accent-hover); }
+.w__btn--picked { border-color: var(--accent); color: var(--accent); }
+.w__btn:disabled { cursor: default; opacity: .45; }
+.w__answered { margin-top: 10px; color: var(--text-3); font-size: 12px; }
+.w__bar { height: 4px; margin-top: 10px; background: var(--fill-ghost-2); border-radius: 2px; overflow: hidden; }
+.w__bar span { display: block; height: 100%; background: var(--ok); }
+/* diff **只有一层面**: 外面已经是一张卡, 里面再铺一个圆角底就成了
+   "卡里的卡" —— 两圈圆角、两层底色, 说的却是同一件事.
+   加减行的底色靠负边距铺到卡的边上, 那条色带才是一整行. */
+.w--diff { padding: 12px 14px; }
+.w__diff { margin: 0; padding: 0; background: none; font: 11.5px/1.65 ui-monospace, monospace; white-space: pre-wrap; }
+.w--diff .w__head + .w__diff { margin-top: 8px; }
+/* 加的减的分开看得见 —— 见 diffline.ts.
+   底色只铺一层很淡的, 靠字色区分: 整行大红大绿在深色底上会糊成一片 */
+.dl { display: block; padding: 0 14px; margin: 0 -14px; }
+.dl--add { color: var(--ok); background: color-mix(in srgb, var(--ok) 10%, transparent); }
+.dl--del { color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, transparent); }
+.dl--meta { color: var(--text-4); }
+.w--unknown { color: var(--warn); font-size: 12.5px; }
+.w__field { display: flex; flex-direction: column; gap: 4px; margin-top: 9px; }
+.w__field span { color: var(--text-3); font-size: 11.5px; }
+.w__field input { padding: 7px 10px; background: var(--fill-ghost); color: var(--text); border: none; border-radius: 8px; font: inherit; outline: none; }
+.w__grid { width: 100%; margin-top: 8px; border-collapse: collapse; font-size: 12px; }
+.w__grid th { color: var(--text-3); font-weight: 500; text-align: left; padding: 4px 8px 4px 0; }
+.w__grid td { padding: 4px 8px 4px 0; color: var(--text-2); }
+
+/* ── 输入壳: 按钮在里面, 不跟输入框并排 ──────────────────── */
+.composer { padding: 10px 26px 18px; }
+.shell {
+  padding: 9px; background: var(--card); border-radius: var(--r-shell);
+  box-shadow: var(--card-shadow);
+  box-shadow: 0 1px 2px rgb(0 0 0 / .12);
+}
+.shell:focus-within { border-color: rgb(var(--ink) / .18); }
+.shell__input {
+  display: block; width: 100%; max-height: 160px; resize: none;
+  /* 自适应高度归 CSS —— JS 那套"先 0px 再量"的瞬时布局会把时间线
+     的 scrollTop 钳矮 22px, 见 Composer.tsx 那段注释 */
+  field-sizing: content; min-height: 1lh;
+  padding: 3px 5px 6px; background: transparent; color: var(--text);
+  border: 0; outline: none; font: inherit; line-height: 1.6;
+}
+.shell__input::placeholder { color: var(--text-3); }
+.shell__actions { display: flex; align-items: center; gap: 6px; }
+.shell__grow { flex: 1; }
+.shell__btn {
+  all: unset; display: grid; place-items: center;
+  width: 30px; height: 30px; border-radius: 50%;
+  background: var(--fill-ghost); color: var(--text-2); cursor: pointer;
+}
+.shell__btn:hover { background: var(--fill-ghost-2); color: var(--text); }
+.shell__btn--send { background: var(--accent); color: #fff; }
+.shell__btn--send:hover { background: var(--accent-hover); color: #fff; }
+.shell__btn:disabled { cursor: default; opacity: .4; }
+.shell__btn--send:disabled { background: var(--fill-ghost); color: var(--text-4); }
+
+/* + 的悬浮菜单: 贴着按钮往上弹, 附件类动作都住这儿 */
+.plus { position: relative; display: inline-flex; }
+.plus__menu {
+  position: absolute; bottom: 36px; left: 0; min-width: 168px;
+  display: grid; gap: 1px; padding: 4px;
+  background: var(--bg-raised, var(--bg)); border: 1px solid var(--line);
+  border-radius: 10px; box-shadow: 0 8px 22px rgb(0 0 0 / .3); z-index: 10;
+}
+.plus__item {
+  all: unset; display: flex; align-items: center; gap: 7px;
+  padding: 6px 9px; border-radius: 7px; cursor: pointer;
+  color: var(--text-2); font-size: 12px; white-space: nowrap;
+}
+.plus__item:hover { background: var(--fill-ghost); color: var(--text); }
+.plus__item small { color: var(--text-4); font-size: 10.5px; }
+
+/* 自绘下拉(工作区候选等): 跟 plus__menu 同一副皮, 贴着输入框 */
+.drop {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 12;
+  display: grid; gap: 1px; padding: 4px; max-height: 168px; overflow: auto;
+  background: var(--bg-raised, var(--bg)); border: 1px solid var(--line);
+  border-radius: 10px; box-shadow: 0 8px 22px rgb(0 0 0 / .3);
+}
+.drop__item {
+  all: unset; display: flex; align-items: baseline; gap: 7px; min-width: 0;
+  padding: 6px 9px; border-radius: 7px; cursor: pointer;
+}
+.drop__item:hover { background: var(--fill-ghost); }
+.drop__item b { color: var(--text-2); font-size: 12px; font-weight: 600; flex: none; }
+.drop__item:hover b { color: var(--text); }
+.drop__item small { color: var(--text-4); font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 顶栏那个 + 往下弹, **贴着按钮**: 右缘对齐, 6px 缝 —— 飘远了就不知道是谁弹的 */
+.plus__menu--down { top: calc(100% + 6px); bottom: auto; left: auto; right: 0; }
+
+/* ── 新建表单: 标签一列, 控件一列, 眼睛只扫一条竖线 ─────────── */
+.frm { display: grid; gap: 9px; padding: 14px 20px 4px; }
+.frm__row { display: flex; align-items: center; gap: 10px; min-height: 24px; }
+.frm__key { flex: 0 0 58px; text-align: right; color: var(--text-3); font-size: 12px; }
+.frm__val { flex: 1; min-width: 0; }
+.frm__pick { position: relative; display: flex; align-items: center; gap: 6px; }
+.frm__pick .field { flex: 1; min-width: 0; }
+/* 表单里的输入框收到**正好 30px**, 跟旁边按钮同一条上下缘 ——
+   基础 .field 的 9px 上下 padding 在这儿显得虚胖, 比按钮还高 */
+.frm .field { padding: 5px 10px; font-size: 12.5px; line-height: 20px; border-radius: 8px; }
+.frm__dir {
+  all: unset; flex: none; display: grid; place-items: center; width: 30px; height: 30px;
+  border-radius: 8px; background: var(--fill-ghost); color: var(--text-3); cursor: pointer;
+}
+.frm__dir:hover { background: var(--fill-ghost-2); color: var(--text); }
+.frm__hint { color: var(--text-4); font-size: 11px; }
+.frm__chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.chip {
+  all: unset; padding: 3px 10px; border-radius: 999px;
+  background: var(--fill-ghost); color: var(--text-3); font-size: 11.5px; cursor: pointer;
+}
+.chip:hover { color: var(--text); background: var(--fill-ghost-2); }
+.chip--on { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); }
+
+.empty { flex: 1; display: grid; place-items: center; color: var(--text-3); font-size: 13px; }
+
+/* 消息正文里的图: 就地铺出来, 点开看大的 */
+.md__imgbtn { all: unset; display: block; margin: 6px 0; cursor: zoom-in; line-height: 0; }
+.md__img { max-width: min(380px, 100%); max-height: 280px; border-radius: 10px; display: block; }
+.md__imgbtn:hover .md__img { outline: 1px solid var(--line); }
+
+/* 消息里的链接: 能点、看得出能点 —— Electron 里点了走系统浏览器 */
+.md__link { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; word-break: break-all; }
+.md__link:hover { color: var(--accent-hover); }
+
+/* 忙碌状态条: 住在输入框上方, 纤细、不抢消息的地盘 */
+.busy {
+  position: relative; display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+  padding: 5px 26px 2px; font-size: 12px; color: var(--text-3);
+}
+.busy__label { font-size: 12px; }
+.busy__grow { flex: 1; }
+.busy .facepile { margin-right: 0; }
+.busy__faces { all: unset; display: inline-flex; cursor: pointer; border-radius: 999px; }
+.busy__faces:hover { filter: brightness(1.15); }
+/* 点脸弹出的清单: 跟菜单同一副皮, 贴着状态条往上开 */
+.busy__list {
+  position: absolute; bottom: calc(100% + 6px); left: 20px; z-index: 12;
+  min-width: 320px; display: grid; gap: 2px; padding: 6px;
+  background: var(--bg-raised, var(--bg)); border: 1px solid var(--line);
+  border-radius: 12px; box-shadow: 0 8px 22px rgb(0 0 0 / .3);
+}
+.busy__one { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 8px; }
+.busy__one:hover { background: var(--fill-ghost); }
+.busy__who { font-weight: 600; color: var(--text-2); font-size: 12px; flex: none; }
+.busy__doing { color: var(--text-4); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hud { display: flex; align-items: center; gap: 14px; padding: 7px 26px; border-top: 1px solid var(--line); color: var(--text-4); font-size: 11px; font-variant-numeric: tabular-nums; }
+.hud b { color: var(--text-3); font-weight: 600; }
+.hud__sep { flex: 1; }
+
+/* ── 浮层: 设置 / 新建 ───────────────────────────────────── */
+.scrim { position: fixed; inset: 0; display: grid; place-items: center; background: rgb(0 0 0 / .42); z-index: 20; }
+/* 贴着头像弹的那种: 不压暗底下, 只接住外面的点击.
+   **z-index 要比客户端里任何东西都高**: 它是浮在整个界面之上的一张卡,
+   被侧栏或输入条压住半截的话, 压住的那半截就再也看不见了 */
+.scrim--bare { background: none; place-items: start; z-index: 60; }
+/* 设置对话框: 尺寸和栅格照 Grok Bot —— 860×620, 左 190px 导航 */
+.dlg {
+  display: grid; grid-template-columns: 190px 1fr;
+  width: min(860px, calc(100vw - 32px)); height: min(620px, calc(100vh - 32px));
+  /* **这一行不能省**: 隐式行是 auto 高的, 内容一长(比如"花了多少"里
+     十几个人)行就撑过 620px, 被 overflow:hidden 齐根切掉 —— 里面那块
+     再写 overflow:auto 也没用, 因为它算出来的高本来就够. */
+  grid-template-rows: minmax(0, 1fr);
+  background: var(--card); border-radius: 14px; box-shadow: var(--float-shadow);
+  overflow: hidden; box-shadow: 0 24px 64px rgb(0 0 0 / .4);
+}
+.dlg__nav { display: flex; flex-direction: column; min-height: 0; overflow: auto; gap: 3px; padding: 16px 10px 12px; background: rgb(0 0 0 / .14); border-right: 1px solid var(--line); }
+/* 左栏顶上那一格: 一个标记 + "设置" —— 空着的话这一栏看着像没加载出来.
+   高度对齐右边那条标题栏, 两边在同一条线上 */
+.dlg__brand { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 10px; margin-bottom: 6px; color: var(--text-2); font-size: 13px; font-weight: 600; }
+.dlg__mark { width: 17px; height: 17px; opacity: .9; }
+.dlg__navItem { all: unset; display: flex; align-items: center; padding: 8px 10px; border-radius: 6px; color: var(--text-2); font-size: 13px; cursor: pointer; }
+.dlg__navItem:hover { color: var(--text); }
+.dlg__navItem[data-active] { color: var(--text); background: var(--fill-ghost-2); }
+.dlg__panel { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.dlg__panel > h2 { height: 54px; margin: 0; padding: 17px 24px; box-sizing: border-box; border-bottom: 1px solid var(--line); font-size: 15px; font-weight: 600; }
+.dlg__close { all: unset; position: absolute; top: 12px; right: 16px; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 7px; color: var(--text-3); font-size: 19px; cursor: pointer; }
+.dlg__close:hover { background: var(--fill-ghost); color: var(--text); }
+.dlg__body { flex: 1; min-height: 0; overflow: auto; padding: 24px; }
+.dlg__error { margin-top: 4px; padding: 9px 12px; border-radius: 9px; background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); font-size: 12.5px; }
+
+.stack { display: grid; gap: 22px; align-content: start; }
+.grp { display: grid; gap: 9px; }
+.grp__label { color: var(--text-2); font-size: 12.5px; }
+.grp__label small { margin-left: 8px; color: var(--text-4); font-size: 11.5px; }
+.card {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  min-height: 44px; padding: 13px; background: var(--fill-ghost); border-radius: 9px; cursor: pointer;
+}
+.card--plain { cursor: default; }
+.card__copy { display: grid; gap: 4px; flex: 1; min-width: 0; font-size: 13px; }
+.card__copy small { color: var(--text-3); font-size: 11.5px; }
+.card input[type="checkbox"] { accent-color: var(--accent); }
+.pill { padding: 3px 9px; border-radius: 999px; background: var(--fill-ghost-2); color: var(--text-3); font-size: 11.5px; }
+.pill--on { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+
+.sheet {
+  width: 440px; max-width: calc(100vw - 48px); max-height: calc(100vh - 96px); overflow: auto;
+  background: var(--card); border-radius: var(--r-shell); box-shadow: var(--float-shadow);
+  box-shadow: 0 18px 48px rgb(0 0 0 / .34);
+}
+.sheet--narrow { width: 380px; }
+.sheet__head { display: flex; align-items: center; height: 48px; padding: 0 10px 0 18px; border-bottom: 1px solid var(--line); font-weight: 600; }
+.sheet__head span { flex: 1; }
+.sheet__x { all: unset; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 7px; color: var(--text-3); font-size: 17px; cursor: pointer; }
+.sheet__x:hover { background: var(--fill-ghost); color: var(--text); }
+.sheet__section { padding: 16px 18px; border-bottom: 1px solid var(--line); }
+.sheet__section:last-of-type { border-bottom: 0; }
+.sheet__label { margin-bottom: 9px; color: var(--text-2); font-size: 12px; }
+.sheet__label small { margin-left: 8px; color: var(--text-4); }
+/* 提示: 说清楚这一填意味着什么, 但不抢过输入框 */
+/* 资料卡里就地改的那个框 —— 比表单里的窄, 它是一行不是一段 */
+.field--inline { min-width: 220px; padding: 5px 9px; font-size: 12px; }
+/* 路径要能整条读出来, 不能被截成半截 —— 半截路径比没有更容易让人认错地方 */
+
+.sheet__hint { margin: 6px 0 0; color: var(--text-4); font-size: 11.5px; line-height: 1.6; }
+.sheet__error { margin: 0 18px 14px; padding: 9px 12px; border-radius: 9px; background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); font-size: 12.5px; }
+.sheet__foot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 18px 18px; }
+
+.seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.seg__btn { all: unset; padding: 6px 13px; border-radius: 8px; color: var(--text-2); font-size: 12.5px; cursor: pointer; }
+.seg__btn:hover { color: var(--text); }
+/* 去框之后 border-color 就没东西可染了 —— 选中改成底色 + 一层内描边 */
+.seg__btn--on { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+
+.switch { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+.switch input { margin-top: 3px; accent-color: var(--accent); }
+.switch span { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.switch small { color: var(--text-4); font-size: 11.5px; }
+
+.kv { display: flex; align-items: baseline; gap: 12px; padding: 4px 0; font-size: 12.5px; }
+.kv span { flex: 0 0 62px; color: var(--text-3); }
+.kv code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-size: 12px; }
+
+.field { width: 100%; padding: 9px 12px; background: var(--fill-ghost); color: var(--text); border: none; border-radius: 9px; font: inherit; outline: none; }
+.field:focus { border-color: var(--accent); }
+.kv--off { color: var(--warn); }
+
+/* ── 动效 ────────────────────────────────────────────────────
+ *
+ *   两条克制的规则:
+ *   ① 只给**新来的**行做进入动效. 虚拟列表里旧行滚进视口也会 mount,
+ *      不区分的话往回滚就是一整屏历史挨个"飞进来" —— 那是故障不是动效.
+ *   ② 等待用 text shimmer 不用转圈. 转圈是"系统在忙",
+ *      shimmer 是"这段字正在来" —— 后者才是这里真实发生的事.
+ */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+.row--fresh .row__body { animation: rise .24s cubic-bezier(.22, 1, .36, 1); }
+.row--fresh .row__gutter { animation: rise .24s cubic-bezier(.22, 1, .36, 1) .02s backwards; }
+
+.row--pending { padding-top: 14px; }
+/* 一排小脸叠着排 —— "2 个人正在干活"前面就是这 2 个人 */
+.facepile { display: inline-flex; align-items: center; vertical-align: middle; margin-right: 8px; }
+.facepile .ava + .ava { margin-left: -7px; }
+.facepile .ava__disc { box-shadow: 0 0 0 2px var(--bg); }
+/* 干到哪儿了: 比占位那句话还淡一档 —— 它是背景信息, 不是主语 */
+.row__doing { margin-left: 10px; color: var(--text-4); font-size: 11.5px; }
+/* 刹车: 平时淡, 悬停才实 —— 它是退路, 不该抢在"正在干活"前面.
+   但它必须一直在: 想按它的时候, 人正盯着这一行 */
+.row__stop {
+  all: unset; margin-left: 10px; padding: 1px 9px; border-radius: 999px;
+  border: 1px solid var(--line); color: var(--text-4); font-size: 11px; cursor: pointer;
+  vertical-align: 1px;
+}
+.row__stop:hover { border-color: color-mix(in srgb, var(--bad) 50%, transparent); color: var(--bad); }
+.row__stop:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+@keyframes shimmer { to { background-position: -200% 0; } }
+.shimmer {
+  background: linear-gradient(90deg,
+    var(--text-4) 0%, var(--text-4) 35%,
+    var(--text) 50%,
+    var(--text-4) 65%, var(--text-4) 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 1.8s linear infinite;
+  font-size: 13px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .row--fresh .row__body, .row--fresh .row__gutter { animation: none; }
+  .shimmer { animation: none; color: var(--text-3); }
+}
+
+/* ── 思考: 默认折叠 ──────────────────────────────────────── */
+/* 过程行(思考/工具/系统一句话)间距统一 1px —— 用户点名过"间距不统一" */
+.row--thought { padding-top: 1px; padding-bottom: 1px; }
+.think { all: unset; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.think__label { color: var(--text-4); font-size: 12px; }
+.think:hover .think__label { color: var(--text-3); }
+.think__caret {
+  width: 5px; height: 5px; border-right: 1.3px solid var(--text-4); border-bottom: 1.3px solid var(--text-4);
+  transform: rotate(-45deg); transition: transform .14s ease;
+}
+.think__caret--open { transform: rotate(45deg); }
+.row--thought .row__text { color: var(--text-3); font-size: 12.5px; padding-left: 11px; border-left: 1px solid var(--line-2); margin-top: 6px; }
+.row--thought .row__line { flex-direction: column; align-items: flex-start; gap: 0; }
+.row__text--hidden { display: none; }
+
+/* ── @ 点名 ─────────────────────────────────────────────── */
+.composer { position: relative; }
+.mention {
+  position: absolute; left: 26px; bottom: calc(100% - 6px); z-index: 5;
+  display: flex; flex-direction: column; gap: 2px; min-width: 160px; padding: 5px;
+  background: var(--card); border-radius: 10px; box-shadow: var(--float-shadow);
+  box-shadow: 0 10px 28px rgb(0 0 0 / .34);
+}
+.mention__item { all: unset; padding: 7px 10px; border-radius: 7px; color: var(--text-2); font-size: 13px; cursor: pointer; }
+.mention__item:hover, .mention__item--on { background: var(--fill-ghost-2); color: var(--text); }
+/* @点名只有**一套**样式: 原来 heard 行用 .mentionTag、markdown 里另起
+   一个类, 同一个 @发版 在你说的那条和 bot 说的那条会长得不一样 */
+.mentionTag, .md__at {
+  padding: 0 3px; border-radius: 4px; font-weight: 600;
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.card--pick { text-align: left; }
+.card--on { background: color-mix(in srgb, var(--accent) 13%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 34%, transparent); }
+.radio { width: 15px; height: 15px; border-radius: 50%; border: 1.5px solid var(--line-2); flex: 0 0 auto; }
+.radio--on { border-color: var(--accent); box-shadow: inset 0 0 0 3.5px var(--accent); }
+
+/* ── 工具调用: 一次一行, 结果长在它下面 ─────────────────── */
+.row--did { padding-top: 2px; padding-bottom: 2px; }
+.row--did .row__line { align-items: center; gap: 7px; }
+.tool__name {
+  flex: 0 0 auto; padding: 1px 7px; border-radius: 5px;
+  background: var(--fill-ghost); color: var(--text-2);
+  font: 500 11px/1.7 ui-monospace, SFMono-Regular, monospace;
+}
+.row--bad .tool__name { background: color-mix(in srgb, var(--bad) 16%, transparent); color: var(--bad); }
+.row--did .row__text {
+  color: var(--text-3); font-size: 11.5px;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tool__out {
+  margin: 4px 0 6px; padding: 7px 10px; max-height: 150px; overflow: auto;
+  background: var(--fill-ghost); border-radius: 7px;
+  color: var(--text-3); font: 11px/1.6 ui-monospace, SFMono-Regular, monospace;
+  white-space: pre-wrap; word-break: break-word;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.tool__spin {
+  flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%;
+  border: 1.4px solid var(--line-2); border-top-color: var(--text-3);
+  animation: spin .7s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) { .tool__spin { animation: none; } }
+
+/* ── markdown: 够用的那一点点 ───────────────────────────── */
+.md__p { margin: 0 0 8px; }
+.md__p:last-child { margin-bottom: 0; }
+.md__list { margin: 4px 0 8px; padding-left: 20px; }
+.md__list:last-child { margin-bottom: 0; }
+.md__list li { margin: 2px 0; }
+.md__inline { padding: 1px 5px; border-radius: 4px; background: var(--fill-ghost); font: 12px/1.5 ui-monospace, SFMono-Regular, monospace; }
+.md__code {
+  margin: 6px 0; padding: 10px 12px; overflow: auto; max-height: 320px;
+  background: var(--fill-ghost); border-radius: 9px;
+  font: 11.5px/1.65 ui-monospace, SFMono-Regular, monospace; white-space: pre;
+}
+.row__text strong { font-weight: 600; }
+
+
+/* 标题: 层级只用来分轻重, **不用来撑字号** ——
+   聊天气泡里一个整屏大的 h1 会把整条消息的节奏打断 */
+.md__h { margin: 10px 0 4px; font-weight: 640; color: var(--text-1); }
+.md__h:first-child { margin-top: 0; }
+.md__h[data-level="1"], .md__h[data-level="2"] { font-size: 14px; }
+.md__h[data-level="3"], .md__h[data-level="4"],
+.md__h[data-level="5"], .md__h[data-level="6"] { font-size: 13px; color: var(--text-2); }
+
+/* 表格.
+   **横向滚动在外层这一圈**: 一张五列的对照表在气泡里放不下,
+   不给它自己的滚动容器, 整条消息会被撑宽, 头像和时间戳跟着错位 */
+.md__tablewrap { margin: 6px 0; overflow-x: auto; }
+.md__tablewrap:last-child { margin-bottom: 0; }
+.md__table { border-collapse: collapse; font-size: 12.5px; line-height: 1.55; }
+.md__table th, .md__table td {
+  padding: 5px 10px; border: 1px solid var(--line-2);
+  vertical-align: top; white-space: normal;
+}
+.md__table th { background: var(--fill-ghost); font-weight: 600; color: var(--text-1); }
+.md__table td { color: var(--text-2); }
+
+/* ── 工具组: 跑的时候展开, 跑完折成一行 ─────────────────── */
+.row--tools { padding-top: 3px; padding-bottom: 3px; }
+.row--tools .row__line { flex-direction: column; align-items: stretch; gap: 0; }
+.tg { min-width: 0; }
+.tg__head { all: unset; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.tg__label { color: var(--text-4); font-size: 12px; }
+.tg__head:hover .tg__label { color: var(--text-3); }
+.tg__list { display: grid; gap: 5px; margin: 7px 0 4px; padding-left: 11px; border-left: 1px solid var(--line-2); }
+/* 并进来的思考: 跟原思考行同一副长相 —— 换个地方住, 不换衣服 */
+.tg__thought { color: var(--text-3); font-size: 12.5px; white-space: pre-wrap; padding-bottom: 3px; border-bottom: 1px solid var(--line-2); }
+.tg__row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 7px; align-items: center; }
+.tg__arg {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--text-3); font: 11.5px/1.6 ui-monospace, SFMono-Regular, monospace;
+}
+.tg__row .tool__out { grid-column: 1 / -1; margin: 2px 0 4px; }
+.tg__row--bad .tool__name { background: color-mix(in srgb, var(--bad) 16%, transparent); color: var(--bad); }
+/* 出事说出来 —— 只有一层淡色底的话, 用户扫一眼分不清"探路失败"和"真出事" */
+.tg__flag { flex: none; padding: 0 5px; border-radius: 4px; font-size: 10px; line-height: 16px; }
+.tg__flag--bad { background: color-mix(in srgb, var(--bad) 18%, transparent); color: var(--bad); }
+.tg__flag--held { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+/* 被闸拦下 —— 黄的不是红的. 系统按设计挡了一下, 不是坏了 */
+.tg__row--held .tool__name { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
+
+/* ── 设置: 分区 + 面板 + 行内控件 ─────────────────────────
+ *
+ *   照参考的那套: 分区标题是小字灰, 内容收在一张圆角面板里,
+ *   每行左边标题+一句说明、右边控件. **说明只写一句** ——
+ *   设置页的字一多就没人看了, 而没人看的说明等于没写.
+ */
+.sec { display: grid; gap: 10px; }
+.sec__label { color: var(--text-2); font-size: 12.5px; font-weight: 500; }
+.sec__label small { margin-left: 8px; color: var(--text-4); font-weight: 400; }
+.sec__foot { display: flex; justify-content: flex-end; }
+/* 试的结果摆在按钮边上 —— 它是这次点击的回执, 不该跑到别处去 */
+.sec__foot--split { align-items: center; gap: 10px; }
+.probe { flex: 1 1 auto; font-size: 12px; color: var(--text-3); overflow-wrap: anywhere; }
+.probe--hint { color: var(--text-4); }
+.probe--ok { color: var(--ok); }
+.probe--bad { color: var(--bad); }
+/* 输入框 + 一颗动作图标: 图标不占一行, 也不写字 */
+.pickline { display: flex; align-items: center; gap: 6px; }
+/* 拉回来的模型名单: 一排可点的名字, 点中的那个标出来 */
+.chips { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; max-width: 380px; }
+.chip--on { background: var(--accent); color: #fff; }
+.panel { background: var(--fill-ghost); border-radius: 11px; overflow: hidden; }
+
+.rw { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 13px 15px; }
+.rw + .rw { border-top: 1px solid var(--line); }
+/* 摊开的明细跟它上面那一行是同一块, 中间不划线 */
+.rw--tap + .rw--more { border-top: none; }
+.rw__copy { display: grid; gap: 3px; min-width: 0; font-size: 13px; }
+.rw__copy small { color: var(--text-3); font-size: 11.5px; line-height: 1.5; }
+.rw__ctl { flex: 0 0 auto; }
+.rw__note { color: var(--text-3); font-size: 12.5px; }
+.rw__note--off { color: var(--warn); }
+.rw__note--mono { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 11.5px; }
+
+/* 值是一整条路径的那种行: **上下排, 不是左右排**.
+   左右排时长路径会把标签挤成一个字一行的竖排, 自己还被切掉半截 ——
+   而半截路径比没有更糟: 人会照着它认错地方. */
+.rw--stack { display: grid; gap: 8px; align-items: stretch; }
+.rw__stackhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+/* 路径不裹自己的底色框: 面板已经是一层底, 框是**卡里的卡** ——
+   而且框只装得下一行字, 左边那一大片空白就白占了一行的高.
+   现在它是这一行的右值: 左标签右路径, 跟上下几行同一个形状. */
+.rw__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; width: 100%; min-width: 0; }
+/* 标签不折行: 右边那一列会折(路径本来就长), 而"在哪儿干/活"这种断法
+   是把一个词劈成两半 —— 折的该是值, 不是标签 */
+.rw__head .rw__copy { flex: 0 0 auto; white-space: nowrap; }
+.rw__ctl--path { display: grid; justify-items: end; gap: 3px; flex: 1 1 auto; min-width: 0; }
+.rw__path {
+  color: var(--text-2); font: 11.5px/1.55 ui-monospace, SFMono-Regular, monospace; text-align: right;
+  /* 长路径要**整条读得出来** —— 宁可折行也不截断.
+     断点优先在斜杠处(见 Profile.tsx 的 pathParts): 人读路径是按段读的,
+     断在词中间要在脑子里再接回去 */
+  overflow-wrap: anywhere;
+}
+/* **一整行就是那颗按钮** —— 见 Profile.tsx 的 Tap.
+   能点这件事靠悬停底色和右边那个尖角说, 不靠再写一句"换个地方":
+   那句话换来的是一整行的高, 而它说的正是这一行本来就在说的事. */
+.rw--tap { all: unset; box-sizing: border-box; display: flex; align-items: center;
+  justify-content: space-between; gap: 10px; width: 100%; padding: 11px 14px; cursor: pointer; }
+.rw--tap:hover { background: var(--fill-ghost-2); }
+/* 副窗开着的那一行**一直亮着**: 右边那扇窗说的是这一行的事,
+   不标出来的话副窗看着像凭空冒出来的 */
+.rw--on { background: var(--fill-ghost-2); }
+.rw--on .rw__chev { color: var(--accent); }
+.rw--tap:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.rw__ctl--tap { display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1 1 auto; justify-content: flex-end; }
+.rw__chev { flex: 0 0 auto; color: var(--text-4); transform-origin: 50% 50%; transition: transform .14s ease; }
+.rw--tap:hover .rw__chev { color: var(--text-3); }
+/* 已经摊开的那一行: 尖角转下来, 指着它自己摊出来的那几条 */
+.rw--open .rw__chev { transform: rotate(90deg); }
+
+/* 摊开的明细: 两列小字, 平时收着 —— 出事的时候才有人问 pid */
+.rw--more { padding-top: 0; }
+.more { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; margin: 0; width: 100%; }
+.more dt { color: var(--text-4); font-size: 11.5px; }
+.more dd { margin: 0; color: var(--text-3); font: 11.5px/1.6 ui-monospace, SFMono-Regular, monospace;
+  text-align: right; overflow-wrap: anywhere; }
+/* 改地方: 输入框和"选目录"**同一行** —— 选目录是主路, 敲/粘是备用 */
+.rw__pickline { display: flex; align-items: center; gap: 8px; }
+.rw__pickline .field { flex: 1 1 auto; min-width: 0; }
+.rw__pickline .w__btn { flex: 0 0 auto; white-space: nowrap; }
+/* 常去的几个工作区: 一排小标签, 点一下就填进去 */
+/* 一行放不下就**横着滑**: 折成三行是拿高度换宽度, 而高度才是这里紧的 */
+.rw__chips { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.rw__chips::-webkit-scrollbar { height: 0; }
+.chip {
+  all: unset; flex: 0 0 auto; max-width: 230px; padding: 3px 8px; border-radius: 7px; cursor: pointer;
+  background: var(--fill-ghost-2); color: var(--text-3);
+  font: 11px/1.5 ui-monospace, SFMono-Regular, monospace;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.chip:hover { background: var(--fill-ghost); color: var(--text-2); }
+/* 注脚跟按钮同一行: "换地方 = 重起一个进程"是这次操作的说明,
+   它不值一整行, 而按钮右对齐之后左边正好空着 */
+.rw__foot { display: flex; align-items: center; gap: 10px; }
+.rw__foot .sheet__hint { flex: 1 1 auto; margin: 0; }
+/* 按钮不参与压缩: 被挤窄之后"换过去"会竖成两行, 那看着像坏了 */
+.rw__foot .w__btn { flex: 0 0 auto; white-space: nowrap; }
+/* 岗位: 一整句, 跟路径一样上下排 —— 塞进右边那一格会被挤成竖排 */
+.rw__note--role { color: var(--text-2); font-size: 12.5px; line-height: 1.65; }
+.rw__acts { display: flex; gap: 8px; justify-content: flex-end; }
+.sheet__error--inline { margin: 0; padding: 7px 10px; font-size: 12px; }
+
+/* 分段器 */
+.sg { display: inline-flex; padding: 2px; background: var(--fill-ghost-2); border-radius: 8px; }
+.sg__btn {
+  all: unset; padding: 5px 11px; border-radius: 6px; cursor: pointer;
+  color: var(--text-3); font-size: 12.5px; white-space: nowrap;
+}
+.sg__btn:hover { color: var(--text-2); }
+.sg__btn--on { background: var(--bg-elevated); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / .18); }
+
+/* 开关 */
+.tgl {
+  all: unset; display: inline-flex; align-items: center; width: 38px; height: 22px;
+  padding: 2px; border-radius: 999px; background: var(--fill-ghost-2); cursor: pointer;
+  transition: background .14s ease;
+}
+.tgl--on { background: var(--accent); }
+.tgl__knob {
+  width: 18px; height: 18px; border-radius: 50%; background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / .3); transition: transform .14s cubic-bezier(.22,1,.36,1);
+}
+.tgl--on .tgl__knob { transform: translateX(16px); }
+
+.field--inline { width: 260px; padding: 6px 10px; font-size: 12.5px; }
+
+/* ── 这一轮没走完 ────────────────────────────────────────
+ *
+ *   一个被拦下的 turn 跟一个没反应的 bot, 在界面上必须长得
+ *   完全不一样 —— 后者用户会以为是产品坏了.
+ *   所以它不是一行灰字, 是一张说得清的卡.
+ */
+.row--alert { padding-top: 8px; padding-bottom: 10px; }
+/* **gap 必须是 0**: 标题和正文是两个各自带底色的块, 中间留 4px 的话
+   页面底色从缝里透出来 —— 看着就是横穿卡片的一条线, 而它其实是
+   "一张卡裂成了两半". 这张卡说的是"出错了", 裂开的样子只会让人
+   更觉得是产品坏了. */
+.row--alert .row__line { flex-direction: column; align-items: flex-start; gap: 0; }
+.row--alert .row__title,
+.row--alert .row__text {
+  max-width: 460px; box-sizing: border-box;
+}
+/* "×3" 跟在标题后面: 比标题淡, 它是个计数不是新信息 */
+.row__times { margin-left: 7px; font-weight: 500; opacity: .72; }
+.row--alert .row__title {
+  display: block; width: 100%; padding: 11px 14px 0;
+  background: color-mix(in srgb, var(--warn) 13%, var(--card));
+  border-radius: 11px 11px 0 0;
+  color: var(--warn); font-size: 13px; font-weight: 600;
+}
+.row--alert .row__text {
+  display: block; width: 100%; padding: 4px 14px 12px;
+  background: color-mix(in srgb, var(--warn) 13%, var(--card));
+  border-radius: 0 0 11px 11px;
+  color: var(--text-2); font-size: 12.5px;
+}
+
+/* 过期的卡: 没有按钮, 只说清楚为什么 */
+.w--expired { opacity: .62; }
+
+/* 会话对面已经没气了 —— 明说, 不给一个发不出去的输入框 */
+.gone {
+  margin: 0 26px 4px; padding: 9px 13px; border-radius: 9px;
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  color: var(--text-2); font-size: 12.5px;
+}
+
+/* 删掉这段对话: 悬停才出现, 免得整排叉号抢注意力 */
+.item__drop {
+  display: grid; place-items: center; width: 20px; height: 20px; border-radius: 6px;
+  color: var(--text-4); font-size: 15px; line-height: 1; opacity: 0;
+  transition: opacity .12s ease;
+}
+.item:hover .item__drop { opacity: 1; }
+.item__drop:hover { background: color-mix(in srgb, var(--bad) 18%, transparent); color: var(--bad); }
+.w__btn--danger { background: var(--bad); border-color: transparent; color: #fff; }
+.drop__copy { display: block; color: var(--text-2); font-size: 13px; line-height: 1.7; }
+.drop__copy b { color: var(--bad); font-weight: 600; }
+
+/* 头像可点 —— 但不做成按钮的样子, 它还是一张脸 */
+.who { all: unset; display: inline-flex; cursor: pointer; border-radius: 50%; }
+.who:hover { filter: brightness(1.12); }
+.who:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* 资料边栏里的行比设置页密一档: 这里一屏要放下六七行 */
+.side .rw { padding: 10px 13px; gap: 12px; }
+.side .rw--tap { padding: 10px 13px; }
+.side .rw__copy { font-size: 12.5px; }
+.side .rw__note--role { font-size: 12px; line-height: 1.6; }
+/* 路径要能**一行读完**: 这条 38 字符的绝对路径在 400px 的卡里
+   只差几个像素就折行, 而折出来的第二行往往只有 '/finance' 五六个字符 */
+.side .rw__path { font-size: 11px; line-height: 1.55; }
+
+/* 拉人进房间 */
+.pick { display: grid; gap: 2px; }
+.pick__row { all: unset; display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 9px; cursor: pointer; font-size: 13px; }
+.pick__row:hover { background: var(--fill-ghost); }
+.pick__out { margin-left: auto; color: var(--text-4); font-size: 11.5px; }
+/* 行上那个短签, 灰的, 不拦着你点 */
+.pick__note { margin-left: auto; color: var(--text-4); font-size: 11px; }
+/* 解释只在真有人不在一处时露一次 */
+.pick__hint { color: var(--text-4); font-size: 11px; padding: 0 12px 6px; }
+.pick__row:hover .pick__out { color: var(--bad); }
+.pick__empty { padding: 8px 10px; color: var(--text-4); font-size: 12.5px; }
+/* 资料卡里的挑房间: 面板已经有底色, 行再淡一档, 别跟面板抢 */
+.side .pick__row { padding: 7px 9px; font-size: 12.5px; }
+.side .pick__row:disabled { cursor: default; color: var(--text-4); }
+.side .pick { margin: 0 -4px; }
+.side .sheet__hint { margin: 2px 0 0; font-size: 11px; line-height: 1.6; }
+
+/* 拍过板的卡: 收成一行, 但不删 —— 事后要能翻出这一步是谁放的行 */
+.settled { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+.settled__mark { flex: 0 0 auto; color: var(--ok); font-size: 12px; }
+.settled--no .settled__mark { color: var(--bad); }
+.settled__text {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--text-4); font-size: 12px;
+}
+.row--widget:has(.settled) { padding-top: 1px; padding-bottom: 1px; }
+
+/* 审批条目跟工具条目区分一下: 它是"你放行的", 不是"它跑的" */
+.tg__row--approval .tool__name { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+.tg__row--approval.tg__row--bad .tool__name { background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); }
+
+/* ── 工具展开: 一条一行, 再点开才出卡 ─────────────────────── */
+.tg__row { display: block; }
+.tg__line {
+  /* **四列, 因为子元素最多四个**: 工具名 · 参数 · 转圈(跑着才有) ·
+     展开箭头(能展开才有). 三列的时候, 工具正在跑而且可展开的那一刻
+     第四个会掉到第二行 —— 而那恰恰是人盯着看的那一刻, 整行跳一下.
+
+     grid-auto-flow: column 是闸: 以后再加一个角标也只会多一列.
+     行高不该由子元素个数决定. (侧栏 .item 是同一个毛病, 一起修的.) */
+  all: unset; display: grid; grid-template-columns: auto minmax(0,1fr) auto auto;
+  grid-auto-flow: column;
+  gap: 7px; align-items: center; width: 100%; cursor: pointer; padding: 2px 0;
+}
+.tg__line:disabled { cursor: default; }
+.tg__more {
+  width: 5px; height: 5px; border-right: 1.2px solid var(--text-4); border-bottom: 1.2px solid var(--text-4);
+  transform: rotate(-45deg); transition: transform .14s ease;
+}
+.tg__more--open { transform: rotate(45deg); }
+
+.cc { margin: 6px 0 8px; border-radius: 10px; overflow: hidden; background: var(--card-sunken); }
+.cc__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 11px; background: var(--fill-ghost); }
+.cc__out, .cc__diff { background: var(--card-sunken); }
+.cc__cmd { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font: 11.5px ui-monospace, monospace; }
+.cc__exit { flex: 0 0 auto; color: var(--ok); font-size: 11px; }
+.cc__exit--bad { color: var(--bad); }
+.cc__out, .cc__diff, .cc--text {
+  margin: 0; padding: 9px 11px; max-height: 260px; overflow: auto;
+  font: 11.5px/1.65 ui-monospace, SFMono-Regular, monospace; white-space: pre-wrap; word-break: break-word;
+  color: var(--text-3);
+}
+.cc--text { border-radius: 10px; }
+.cc__diff { white-space: pre; }
+.cc__add { color: var(--ok); display: block; }
+.cc__del { color: var(--bad); display: block; }
+
+/* ── 多模态卡: 内容不是过程, 不折叠 ───────────────────────── */
+/* 媒体卡按图的**原始尺寸**收, 不撑满这一列.
+   撑满会把一张 320×180 的小图拉到 570px —— 放大出来是糊的,
+   而且一张缩略图占掉半屏, 对话就被它顶没了。
+   width:auto + max-width 只缩不放。 */
+.w--media { margin: 0; padding: 0; overflow: hidden; width: fit-content; min-width: 0; max-width: 420px; }
+.w__img { display: block; width: auto; height: auto; max-width: 100%; max-height: 340px; background: var(--fill-ghost); }
+.w__cap { padding: 8px 12px; color: var(--text-3); font-size: 12px; }
+
+
+/* ── 按类型各自定制 ────────────────────────────────────────
+ *
+ *   一个通用壳子套所有内容, 出来的东西一定是"能看", 到不了"好看".
+ *   下面每张卡都有自己的排版: 天气是磁贴, 代码是一层面, 表格是数表。
+ */
+
+/* 不吃通用卡面的卡: 自己带底 */
+.w--bare { padding: 0; background: none; box-shadow: none; }
+
+/* 天气: 一块自带天空的磁贴 */
+.wx {
+  --wx-a: #2f6fd0; --wx-b: #5aa0e8;
+  width: 208px; min-width: 0; padding: 13px 15px 12px; border-radius: 16px;
+  background: linear-gradient(160deg, var(--wx-a), var(--wx-b));
+  color: #fff; box-shadow: 0 10px 24px -14px rgb(0 0 0 / .55);
+}
+.wx--clear  { --wx-a: #1f6fd6; --wx-b: #6fb6f4; }
+.wx--cloudy { --wx-a: #3d6f9e; --wx-b: #7fa6c6; }
+.wx--grey   { --wx-a: #4b5563; --wx-b: #7c8794; }
+.wx--rain   { --wx-a: #2b4a70; --wx-b: #4d7ba6; }
+.wx--snow   { --wx-a: #5b7794; --wx-b: #9db6cc; }
+.wx__top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.wx__place { font-size: 12.5px; font-weight: 600; letter-spacing: .01em; }
+.wx__icon { width: 26px; height: 26px; flex: 0 0 auto; fill: #fff; opacity: .92; margin: -2px -2px 0 0; }
+.wx__drops { stroke: #fff; stroke-width: 1.6; stroke-linecap: round; fill: none; opacity: .85; }
+/* 温度是这张卡的主角: 大、细、紧 —— 度数符号要小一号并且不参与字重 */
+.wx__temp { margin: 2px 0 6px; font-size: 42px; font-weight: 200; line-height: 1.05; letter-spacing: -.03em; }
+.wx__deg { font-size: 26px; font-weight: 200; vertical-align: top; line-height: 1.5; margin-left: 1px; }
+.wx__foot { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; font-size: 11.5px; opacity: .88; }
+.wx__range { margin-left: auto; opacity: .85; }
+.wx__days { display: flex; justify-content: space-between; gap: 6px; margin-top: 10px; padding-top: 9px; border-top: 1px solid rgb(255 255 255 / .18); }
+.wx__day { display: grid; justify-items: center; gap: 1px; font-size: 10.5px; opacity: .9; }
+.wx__day b { font-size: 12px; font-weight: 600; }
+.wx__day small { font-size: 10px; opacity: .72; }
+
+/* 内容型卡按**内容**收宽, 不吃那条 260px 下限.
+   撑满会把两列硬拉到卡的两端("文件"在最左, "大小"在最右),
+   中间一大片空 —— 眼睛得来回扫才能把一行读完。
+   进度条是例外: 它需要一条够长的杠才有意义。 */
+.w--code, .w--table, .w--doc { width: fit-content; min-width: 0; max-width: 420px; }
+
+/* 代码: 一层面, 语言名只是左上角一行小字 */
+.w--code { padding: 12px 14px; }
+.code__tag { font: 10.5px/1 ui-monospace, SFMono-Regular, monospace; letter-spacing: .08em; text-transform: uppercase; color: var(--text-4); margin-bottom: 8px; }
+.code__body {
+  margin: 0; max-height: 300px; overflow: auto;
+  font: 12px/1.7 ui-monospace, SFMono-Regular, monospace;
+  color: var(--text-2); white-space: pre; word-break: normal;
+}
+
+/* 表格: 表头压成小字, 数字列右对齐用等宽 —— 数位对齐比画线有用 */
+.w--table { padding: 12px 14px; }
+.w__grid { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.w__grid th {
+  padding: 0 0 7px; text-align: left; font-weight: 500;
+  font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--text-4);
+}
+.w__grid td { padding: 5px 0; color: var(--text-2); }
+.w__grid th + th, .w__grid td + td { padding-left: 18px; }
+.w__grid .num { text-align: right; font-family: ui-monospace, SFMono-Regular, monospace; font-variant-numeric: tabular-nums; }
+
+/* 进度: 一行标题 + 一条细杠, 百分比跟标题同一行右侧 */
+.w--progress { padding: 13px 15px; }
+
+
+/* ── 资料卡 + 右边那扇副窗 ────────────────────────────────
+ *
+ *   卡只答"他是谁", 一屏扫完; 要列表、要翻页、要输入框的那些事
+ *   开在**右边贴着的一扇副窗**里. 两扇拼成一个左右布局, 一起居中 ——
+ *   卡不会因为多了一件能干的事就把自己撑大, 而副窗想多高多宽都行.
+ */
+.dock { position: fixed; display: flex; align-items: flex-start; gap: 12px; max-width: calc(100vw - 24px); }
+/* 翻到头像左边时左右对调: 挨着头像的还是那张卡, 副窗退到外侧 */
+.dock--flip { flex-direction: row-reverse; }
+.dock--flip .pane { animation-name: pane-in-flip; }
+@keyframes pane-in-flip { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: none; } }
+
+.prof {
+  width: 380px; flex: 0 0 auto; padding: 18px; border-radius: 14px;
+  background: var(--card); box-shadow: var(--float-shadow);
+}
+.prof__head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.prof__id { min-width: 0; flex: 1 1 auto; }
+.prof__name { font-size: 15px; font-weight: 600; }
+.prof__state { margin-top: 2px; color: var(--text-3); font-size: 12px; }
+/* 停下: 卡头上唯一一个会改变正在发生的事的按钮, 所以它不能像图标那样淡 —— 
+   但也不该是红的: 停不是危险动作, 手上的活一个字不动 */
+.prof__stopbtn {
+  all: unset; flex: 0 0 auto; padding: 3px 10px; border-radius: 999px;
+  border: 1px solid var(--line); color: var(--text-2); font-size: 12px; cursor: pointer;
+}
+.prof__stopbtn:hover { border-color: color-mix(in srgb, var(--bad) 45%, transparent); color: var(--bad); }
+.prof__stopbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* 角上那两颗: 平时淡, 悬停才实 —— 它们是出口, 不是这张卡的主角 */
+.prof__x {
+  all: unset; flex: 0 0 auto; display: grid; place-items: center;
+  width: 26px; height: 26px; border-radius: 8px; color: var(--text-4); cursor: pointer;
+}
+.prof__x:hover { background: var(--fill-ghost); color: var(--text-2); }
+.prof__x:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* 头像墙: 群卡最先要回答的是"屋里都有谁". **每张脸都是一颗按钮** ——
+   "这个谁来着"的答案在他自己那张资料卡上, 不在这儿抄一份 */
+.wall {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(58px, 1fr));
+  gap: 4px; margin-bottom: 12px;
+}
+.wall__one {
+  all: unset; display: flex; flex-direction: column; align-items: center; gap: 5px;
+  padding: 7px 2px 6px; border-radius: 10px; cursor: pointer;
+}
+.wall__one:hover { background: var(--fill-ghost); }
+.wall__one:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.wall__name {
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--text-3); font-size: 11px;
+}
+/* 那个加号跟人排在一起, 因为"再拉一个"就是这面墙上的下一格 */
+.wall__plus {
+  display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%;
+  border: 1px dashed var(--line-strong, rgb(255 255 255 / .18)); color: var(--text-4); font-size: 15px;
+}
+.wall__one:hover .wall__plus { color: var(--text-2); }
+/* 卡里的行比设置页密一档: 这里一屏要放下六七行 */
+.prof .rw { padding: 10px 13px; gap: 12px; }
+.prof .rw--tap { padding: 10px 13px; }
+.prof .rw__copy { font-size: 12.5px; }
+.prof .rw__note--role { font-size: 12px; line-height: 1.6; }
+.prof .rw__path { font-size: 11px; line-height: 1.5; }
+
+/* 副窗: 高度由内容定, 到顶就自己滚 —— 它不该把卡也顶高 */
+.pane {
+  width: 420px; max-width: 46vw; flex: 0 0 auto; display: flex; flex-direction: column;
+  max-height: min(76vh, 640px); padding: 14px 16px 14px; border-radius: 14px;
+  background: var(--card); box-shadow: var(--float-shadow);
+  animation: pane-in .16s cubic-bezier(.22,1,.36,1);
+}
+@keyframes pane-in { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: none; } }
+.pane__head { display: flex; align-items: center; gap: 10px; padding-bottom: 10px; }
+.pane__title { color: var(--text); font-size: 13px; font-weight: 600; }
+.pane__count { flex: 1 1 auto; color: var(--text-4); font-size: 11px; }
+.pane__head .prof__x { margin-left: auto; }
+.pane__count + .prof__x { margin-left: 0; }
+.pane__body { flex: 1 1 auto; min-height: 0; overflow: auto; display: grid; gap: 10px; align-content: start; }
+.pane__pick { display: grid; gap: 2px; }
+/* 一列路径不写它是什么, 看着像别的东西(历史? 收藏?) —— 一行小字就够 */
+.pane__label { padding: 4px 9px 2px; color: var(--text-4); font-size: 11px; }
+.pane__pick .pick__row:disabled { cursor: default; color: var(--text-4); }
+.pane__pick .pick__path { font: 11.5px/1.5 ui-monospace, SFMono-Regular, monospace; color: var(--text-2); overflow-wrap: anywhere; }
+.pane__more { display: block; width: 100%; margin-top: 2px; text-align: center; }
+
+/* ── 花了多少 ────────────────────────────────────────────
+ *
+ *   三块大数摆在最上面: 一眼看完"这台机器一共花了多少、省了多少、
+ *   换来了什么". 下面按人排, 每个人一条横杠 —— 谁占大头一眼看得出,
+ *   而这一页要回答的正是那个问题.
+ */
+.tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.tile { padding: 14px 16px; border-radius: 12px; background: var(--fill-ghost); }
+.tile__big { font-size: 26px; font-weight: 300; letter-spacing: -.02em; line-height: 1.1; color: var(--text); }
+.tile__big--good { color: var(--ok); }
+.tile__label { margin-top: 4px; color: var(--text-2); font-size: 12px; }
+.tile__note { margin-top: 2px; color: var(--text-4); font-size: 11px; line-height: 1.5; }
+
+.spend { padding: 11px 14px; display: grid; gap: 6px; }
+.spend + .spend { border-top: 1px solid var(--line); }
+.spend__head { display: flex; align-items: center; gap: 8px; }
+.spend__who { font-size: 12.5px; color: var(--text); }
+.spend__where { color: var(--text-4); font-size: 11px; }
+/* 数字用等宽 + 表格数字: 一列数字对不齐就没法比大小, 而比大小是这一页的全部意义 */
+.spend__num { margin-left: auto; font: 12px/1 ui-monospace, SFMono-Regular, monospace; font-variant-numeric: tabular-nums; color: var(--text-2); }
+.spend__bar { height: 4px; border-radius: 2px; background: var(--fill-ghost-2); overflow: hidden; }
+.spend__fill { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+.spend__note { color: var(--text-4); font-size: 11px; }
+
+/* 产物: 一行一个改动 / 一次提交. 判据是 git, 不是它自己说的话 */
+.made { display: grid; gap: 1px; }
+.made__row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: baseline; padding: 4px 8px; border-radius: 7px; }
+.made__row:hover { background: var(--fill-ghost); }
+.made__row--commit { grid-template-columns: auto minmax(0, 1fr) auto auto; }
+/* 分支那一栏: 一人一行, 点了看他自己.
+   **这一行是个 button, 所以先把浏览器那套抹干净** —— 不抹的话它自带
+   边框、底色、居中文字, 于是三行分支长成三个大方块, 名字飘在中间.
+   真机截图里就是这样. 写在 .made__row 后面, 不然被它盖回去. */
+.made__row--tap {
+  all: unset; box-sizing: border-box; width: 100%;
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px;
+  align-items: center; padding: 6px 8px; border-radius: 7px; cursor: pointer;
+}
+.made__row--tap:hover { background: var(--fill-ghost); }
+.made__row--tap:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.made__row--tap .made__subject { font-size: 12.5px; color: var(--text); }
+.made__st { font: 10.5px/1.5 ui-monospace, SFMono-Regular, monospace; color: var(--text-4); }
+.made__st--add { color: var(--ok); }
+.made__st--del { color: var(--bad); }
+.made__path { font: 11.5px/1.5 ui-monospace, SFMono-Regular, monospace; color: var(--text-2); overflow-wrap: anywhere; }
+.made__hash { font: 10.5px/1.5 ui-monospace, SFMono-Regular, monospace; color: var(--text-4); }
+.made__subject { font-size: 12px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.made__stat { font-size: 10.5px; color: var(--text-4); white-space: nowrap; }
+.made__add { color: var(--ok); font-weight: 500; }
+.made__del { color: var(--bad); font-weight: 500; }
+.made__at { font: 10.5px/1.5 ui-monospace, SFMono-Regular, monospace; color: var(--text-4); }
+
+/* 一条历史 = 时间 · 干了什么 · 那句话. 三列对齐, 眼睛竖着扫得下来 */
+.log { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+.log__row {
+  display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 9px; align-items: baseline;
+  padding: 5px 8px; border-radius: 7px;
+}
+.log__row:hover { background: var(--fill-ghost); }
+.log__at { color: var(--text-4); font: 10.5px/1.5 ui-monospace, SFMono-Regular, monospace; }
+.log__tag { color: var(--text-4); font-size: 11px; white-space: nowrap; }
+.log__text { color: var(--text-2); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+/* 出事的那几条要一眼挑得出来 —— 一列灰字里, 它们是要找的东西 */
+.log__row--bad .log__tag { color: var(--bad); }
+
+/* 输入框边上那颗方形图标按钮: "选目录…"四个字换成一个文件夹, 省一截宽 */
+.icon--field {
+  all: unset; flex: 0 0 auto; display: grid; place-items: center; cursor: pointer;
+  width: 34px; height: 34px; border-radius: 9px;
+  background: var(--fill-ghost); color: var(--text-3);
+}
+.icon--field:hover { background: var(--fill-ghost-2); color: var(--text); }
+.icon--field:disabled { opacity: .45; cursor: default; }
+
+/* ── 图 ──────────────────────────────────────────────────
+ *
+ *   三处要画图: 输入框里待发的、对话里发过的、bot 看过的那张.
+ *   **一律小着放, 点开才大** —— 一张手机截图按原尺寸铺开会把整屏
+ *   对话顶掉, 而多数时候人只是扫一眼"哦是那张".
+ */
+
+/* 输入框里待发的那几张 */
+.shots { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 12px 2px; }
+.shots__one { position: relative; width: 62px; height: 62px; border-radius: 9px; overflow: hidden; background: var(--fill-ghost); }
+.shots__one img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* 拿掉那颗: 压在右上角, 平时半透明 —— 它是退路, 不是主角 */
+.shots__x {
+  all: unset; position: absolute; top: 2px; right: 2px; display: grid; place-items: center;
+  width: 17px; height: 17px; border-radius: 50%; background: rgb(0 0 0 / .55);
+  color: #fff; font-size: 12px; line-height: 1; cursor: pointer; opacity: .75;
+}
+.shots__x:hover { opacity: 1; background: rgb(0 0 0 / .8); }
+/* 拖到输入框上: 只给一圈提示, 不换整块背景 —— 拖着的时候人还在看下面的对话 */
+.composer--over .shell { outline: 2px dashed color-mix(in srgb, var(--accent) 60%, transparent); outline-offset: -2px; }
+/* 没收下的那几张要说清原因, 点一下收起 —— 静默丢是最糟的处理 */
+.shell__refused {
+  margin: 0 12px 6px; padding: 7px 11px; border-radius: 9px; cursor: pointer;
+  background: color-mix(in srgb, var(--bad) 13%, transparent); color: var(--bad); font-size: 12px;
+}
+
+/* 对话里发过的那几张 */
+.shotwall { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+/* 我发的图**跟我的气泡一边**: 气泡在右、图在左的话, 那张图看着像
+   另一个人插进来的 */
+.row--heard .shotwall { justify-content: flex-end; }
+.shotwall__one {
+  all: unset; display: block; max-width: 220px; border-radius: 11px; overflow: hidden;
+  background: var(--fill-ghost); cursor: zoom-in; line-height: 0;
+}
+.shotwall__one img { display: block; max-width: 220px; max-height: 200px; object-fit: cover; }
+.shotwall__one:hover { outline: 1px solid var(--line); }
+.shotwall__one:focus-visible { outline: 2px solid var(--accent); }
+
+/* 对话里发过的文件: 一枚标签 —— 字节归 bot 读, 界面不装能打开它 */
+.filewall { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.row--heard .filewall { justify-content: flex-end; }
+.filewall__one {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px; border-radius: 9px;
+  background: var(--fill-ghost); color: var(--text-2); font-size: 12px;
+  max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* 待发区里的文件: 跟图并排, 但长相是标签不是缩略图 */
+.shots__one--file { display: inline-flex; align-items: center; line-height: normal; }
+.shots__doc {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 12px; color: var(--text-2); font-size: 12px;
+  max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* bot 看过的那张: 图在左, 它的转述在右 —— 判"它看的是不是我说的那张"
+   只需要这两样并排 */
+.cc--saw { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: start; padding: 10px; }
+.cc__shot { all: unset; display: block; width: 92px; border-radius: 9px; overflow: hidden; cursor: zoom-in; line-height: 0; }
+.cc__shot img { display: block; width: 92px; max-height: 120px; object-fit: cover; }
+.cc__sawtext { min-width: 0; }
+
+/* 点开的大图 */
+.lightbox {
+  position: fixed; inset: 0; z-index: 90; display: grid; place-items: center;
+  padding: 40px; background: rgb(0 0 0 / .82); cursor: zoom-out;
+}
+/* **按窗口缩, 不放大超过原尺寸** —— 放大只会看到马赛克 */
+.lightbox__img { max-width: 100%; max-height: 100%; border-radius: 10px; cursor: default; }
+.lightbox__bar {
+  position: fixed; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 14px;
+  justify-content: center; padding: 14px; color: rgb(255 255 255 / .72); font-size: 12.5px;
+}
+.lightbox__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60vw; }
+.lightbox__link { color: rgb(255 255 255 / .9); }
+
+/* ── 卡片: 网页 / 声音 / 一组图 / 文件 / 认不出的那种 ──────────
+ *
+ *   这几张跟工具卡不同层: 工具是**过程**(缺省折叠), 这些是**内容**
+ *   —— bot 就是在拿它回答你, 折起来等于没回答.
+ */
+
+/* 网页卡: 一整张都能点, 开在系统浏览器里(客户端里没有地址栏) */
+.w--link { display: flex; gap: 11px; align-items: stretch; padding: 0; overflow: hidden; text-decoration: none; color: inherit; }
+.w--link:hover { background: var(--fill-ghost); }
+.link__shot { width: 92px; object-fit: cover; flex: 0 0 auto; }
+.link__body { min-width: 0; padding: 11px 13px 11px 0; display: flex; flex-direction: column; gap: 3px; }
+.w--link .link__body:first-child { padding-left: 13px; }
+.link__title { font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 摘要最多两行: 再多就成了正文, 而正文本来就该说在话里 */
+.link__desc {
+  color: var(--text-2); font-size: 12.5px; line-height: 1.5;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.link__site { display: flex; align-items: center; gap: 5px; margin-top: 2px; color: var(--text-4); font-size: 11.5px; }
+
+/* 声音: 没有"看"的部分, 一条播放条就够 */
+.w--audio { padding: 11px 13px; }
+.w__audio { width: 100%; height: 32px; margin-top: 6px; }
+
+/* 一组图 */
+.w--gallery { padding: 11px 13px 13px; }
+.gal { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; margin-top: 8px; }
+.gal__one { all: unset; display: block; border-radius: 9px; overflow: hidden; cursor: zoom-in; line-height: 0; background: var(--fill-ghost); }
+.gal__one img { width: 100%; height: 96px; object-fit: cover; display: block; }
+.gal__one:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* 文件: 不假装能打开它 —— 说清叫什么、在哪儿、多大 */
+.w--file { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 11px; align-items: center; padding: 11px 13px; }
+.file__icon { color: var(--text-3); }
+.file__name { font-size: 13px; font-weight: 600; }
+/* 路径**可以整条选**: 那是人拿去接着用的唯一形式 */
+.file__path { color: var(--text-4); font: 11px/1.5 ui-monospace, SFMono-Regular, monospace; user-select: all; word-break: break-all; }
+.file__size { color: var(--text-3); font-size: 11.5px; white-space: nowrap; }
+
+/* 认不出种类的那张 —— **它也得像张卡, 不是一摞键值**.
+ *
+ *   见 view/opencard.tsx: 认的是形状不是种类. 卡头一层随图形色相走的
+ *   薄底色, 让"这是一件什么事"在读字之前就到了.
+ *   --g 是色相(0-360), 由 glyphs.tsx 按词认出来.
+ */
+.w--open {
+  --tint: hsl(var(--g) 70% 55%);
+  position: relative; isolation: isolate;
+  /* **定宽, 不跟着内容缩**: 缩了的话字段少的那张变成一条细长的东西,
+     而且两列排不下 —— 几张卡挨着摆, 宽度不齐比什么都显乱 */
+  width: min(420px, 100%);
+  padding: 0; overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--tint) 16%, transparent);
+  /* 进场: 抬一下就停. **不循环** —— 一直动的东西会一直把眼睛拽过去 */
+  animation: cardin .26s cubic-bezier(.2, .8, .3, 1) both;
+}
+@keyframes cardin { from { opacity: 0; transform: translateY(6px); } }
+/* 卡面上那一大张图形: 极淡、往右出血、往左渐隐 —— **是背景不是内容**,
+   淡到读字时注意不到, 扫一眼才看见. 见 view/opencard.tsx */
+.open__art {
+  position: absolute; z-index: -1; right: -40px; top: 46%; line-height: 0;
+  transform: translateY(-50%) rotate(-8deg);
+  color: var(--tint); opacity: .085; pointer-events: none;
+  -webkit-mask-image: linear-gradient(to left, #000 42%, transparent 96%);
+  mask-image: linear-gradient(to left, #000 42%, transparent 96%);
+}
+.open__cover { all: unset; display: block; cursor: zoom-in; line-height: 0; }
+.open__cover img { width: 100%; max-height: 200px; object-fit: cover; display: block; }
+.open__head {
+  display: flex; align-items: center; gap: 9px; padding: 11px 13px;
+  background: linear-gradient(105deg,
+    color-mix(in srgb, var(--tint) 15%, transparent),
+    color-mix(in srgb, var(--tint) 4%, transparent));
+}
+/* 图形装在一个小圆底里: 一张卡上只有这一处有颜色, 其余交给字 */
+.open__glyph {
+  display: grid; place-items: center; width: 28px; height: 28px; flex: 0 0 auto;
+  border-radius: 9px; color: var(--tint);
+  background: color-mix(in srgb, var(--tint) 15%, transparent);
+}
+.open__title { font-size: 13.5px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.open__kind { margin-left: auto; padding-left: 8px; color: var(--text-4); font-size: 11px; letter-spacing: .02em; }
+
+/* 一条行程: "从哪到哪"不用读就懂 */
+.trip { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 10px; align-items: center; padding: 13px 13px 11px; }
+.trip__end { min-width: 0; }
+.trip__end--right { text-align: right; }
+.trip__spot { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trip__at { margin-top: 2px; color: var(--text-3); font-size: 11.5px; }
+.trip__line { display: flex; align-items: center; gap: 4px; width: 96px; color: var(--tint); }
+.trip__dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: .55; flex: 0 0 auto; }
+.trip__dot--end { opacity: .9; }
+.trip__rail { flex: 1 1 auto; height: 1px; background: currentColor; opacity: .3; }
+/* 图形沿线走一趟就停 */
+.trip__move { display: grid; place-items: center; animation: tripgo .8s cubic-bezier(.3, .7, .4, 1) both; }
+@keyframes tripgo { from { transform: translateX(-26px); opacity: 0; } }
+
+.open__text { margin: 0; padding: 0 13px 2px; color: var(--text-2); font-size: 13px; line-height: 1.62; }
+/* 剩下的字段排成两列 —— 竖着摞一长条是调试输出的样子 */
+.open__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 2px 14px; padding: 8px 13px 12px; }
+.open__cell { display: flex; flex-direction: column; gap: 1px; padding: 5px 0; min-width: 0; }
+.open__cell--wide { grid-column: 1 / -1; }
+.open__key { color: var(--text-4); font-size: 11px; letter-spacing: .02em; }
+.open__val { color: var(--text); font-size: 12.5px; word-break: break-word; }
+.open__list { margin: 2px 0 0; padding-left: 16px; color: var(--text-2); font-size: 12.5px; line-height: 1.7; }
+/* 链接收成一行按钮: 整条 url 铺在卡底下是噪音 */
+.open__go {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 9px 13px; border-top: 1px solid var(--line);
+  color: var(--tint); font-size: 12px; text-decoration: none;
+}
+.open__go:hover { background: color-mix(in srgb, var(--tint) 8%, transparent); }
+.open__go span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── 项目卡 ────────────────────────────────────────────────
+ *
+ *   项目才是干活的单位, 人是围着它转的. 这一页只答四个问题:
+ *   主干什么样、谁手上还压着没合的、最近合了什么、合错了怎么退.
+ */
+/* **不许 all: unset**: 它连 .rail__grouphead 的 padding/flex 一起抹掉 ——
+   项目组头(可点的这种)就会贴死在下面的会话行上, 真机上被用户看出来了.
+   只清 button 自带的那几样, 布局仍归 .rail__grouphead 管 */
+.rail__grouphead--tap {
+  appearance: none; border: 0; margin: 0; background: none;
+  font: inherit; text-align: left; width: 100%; cursor: pointer;
+}
+.rail__grouphead--tap:hover { color: var(--text); }
+.rail__grouphead--tap:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+
+/* **卡不许长过窗口**: 提交多了整张卡会从屏幕底下漏出去, 而漏掉的
+   那一半再也看不见(卡是 fixed 的, 盖得住任何东西, 盖不住"窗口外") */
+.proj { width: 420px; max-height: calc(100vh - 32px); overflow: auto; }
+.proj__glyph {
+  display: grid; place-items: center; width: 40px; height: 40px; flex: 0 0 auto;
+  border-radius: 12px; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.proj__sec { margin-top: 12px; }
+.proj__label { display: flex; align-items: baseline; gap: 8px; margin-bottom: 5px; color: var(--text-4); font-size: 11px; letter-spacing: .02em; }
+/* 这一格空着才是好消息 —— 所以空的时候要明说, 不是留白 */
+.proj__clean { color: var(--ok); }
+.proj__head, .proj__row {
+  all: unset; display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box;
+  padding: 7px 9px; border-radius: 9px; background: var(--fill-ghost); font-size: 12.5px;
+}
+.proj__row { cursor: pointer; margin-bottom: 4px; }
+/* 交接那几行不是按钮 —— 它是记录, 点了没有别的地方可去 */
+.proj__row--flat { cursor: default; }
+.proj__arrow { color: var(--text-4); }
+.proj__row:hover { background: var(--fill-ghost-2); }
+.proj__who { font-weight: 600; }
+.proj__subject { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
+.proj__at, .proj__by { color: var(--text-4); font-size: 11px; white-space: nowrap; }
+.proj__tag { padding: 1px 7px; border-radius: 999px; background: var(--fill-ghost-2); color: var(--text-3); font-size: 11px; }
+/* 没合的那一条要显眼: 它跟"什么都没干"长得一模一样, 而它不是 */
+.proj__tag--wait { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+/* 右键菜单: 跟 + 菜单同一副皮, 只是钉在光标处 */
+.ctx {
+  position: fixed; z-index: 70; min-width: 148px;
+  display: grid; gap: 1px; padding: 4px;
+  background: var(--bg-raised, var(--bg)); border: 1px solid var(--line);
+  border-radius: 10px; box-shadow: 0 8px 22px rgb(0 0 0 / .3);
+}
+.plus__item--danger { color: var(--bad); }
+.plus__item--danger:hover { background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); }
+
+/* 侧栏行里的头像是个入口: 点它开详情, 不切会话 */
+.item__face { display: inline-flex; flex: none; cursor: pointer; border-radius: 50%; }
+
+/* 群主徽章: 名字旁一小枚, 跟微信同一个念法 */
+.wall__owner {
+  margin-left: 3px; padding: 0 4px; border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent);
+  font-size: 9.5px;
+}
+
+/* 紧跟上一行的补充说明: 不占一整行的呼吸感, 贴着走 */
+.rw--sub { margin-top: -8px; padding-top: 0; }
+.rw--sub .rw__note { font-size: 10.5px; }
+
+/* 项目上的动作条: 拉人在左, 解散在右 —— 危险的离手远一点 */
+.proj__actions { display: flex; align-items: center; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.proj__grow { flex: 1; }
+.proj__edit { all: unset; margin-left: 6px; cursor: pointer; color: var(--text-4); vertical-align: middle; }
+.proj__edit:hover { color: var(--text-2); }
+.proj__renaming .field { max-width: 200px; }
+.sheet__hint--lead { margin: 0 20px 4px; }
+.proj__log { display: flex; flex-direction: column; gap: 1px; max-height: 220px; overflow: auto; }
+.proj__commit { display: flex; align-items: center; gap: 8px; padding: 5px 9px; border-radius: 8px; font-size: 12px; }
+.proj__commit:hover { background: var(--fill-ghost); }
+.proj__commit--asking { background: color-mix(in srgb, var(--bad) 10%, transparent); }
+.proj__hash { color: var(--text-4); font: 10.5px/1.5 ui-monospace, SFMono-Regular, monospace; }
+/* 撤那颗平时淡, 悬停才实 —— 它是退路, 不该抢眼 */
+.proj__undo { all: unset; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 7px; color: var(--text-4); cursor: pointer; }
+.proj__commit:hover .proj__undo { color: var(--text-2); }
+.proj__undo:hover { background: var(--fill-ghost-2); color: var(--bad); }
+.proj__ask { display: flex; gap: 6px; }
+.w__btn--danger { background: color-mix(in srgb, var(--bad) 20%, transparent); color: var(--bad); }
+.proj__said { margin-top: 10px; }
+.proj__mine { margin-top: 10px; color: var(--text-4); font-size: 11.5px; }
+
+/* 数字输入框: 窄、右对齐 —— 它装的是一个数, 不是一句话.
+   写在最后 —— .field--inline 在两处定过 width, 排在后面才盖得住 */
+.field--num { width: 110px; min-width: 0; text-align: right; }
+
+/* ── 登录 ──
+   借 .gate 那套壳(同一个居中卡片), 只补它没有的两件:
+   错误行的固定高度, 和一个通宽的按钮.
+
+   **不另起一套**: 两处画同一种卡片的话迟早会漂 —— 这个仓库在设置行上
+   已经栽过一次(_Row 和 _Tap 两个组件画同一种行, 内边距全不一样). */
+.signin { width: 300px; }
+.signin__wrong {
+  margin: 0; min-height: 18px; font-size: 12px; line-height: 18px; color: var(--bad);
+}
+.signin__go { width: 100%; }

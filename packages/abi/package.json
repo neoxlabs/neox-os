@@ -1,0 +1,12 @@
+{
+  "name": "@neox-os/abi",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "NeoxABI — OS 与应用之间唯一的接口面. 只有类型, 没有实现.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

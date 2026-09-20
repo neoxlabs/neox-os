@@ -1,0 +1,37 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+android/local.properties
+android/.gradle/
+android/build/
+android/app/build/
+
+# 编译产物 —— 30MB 的二进制不进版本库, 它们每次构建都变,
+# 而 diff 里一个字都读不出来
+bin/
+go/neox-console
+packages/apps/console/electron/bin/
+
+# 打进二进制的前端 —— os:pack 从 dist 拷来的构建产物, 只留占位
+go/cmd/neox-console/webui/*
+!go/cmd/neox-console/webui/.gitkeep
+
+# 第三方参考材料 —— 逆向重建的外部产品源码, 只读参考, 不进库更不许推
+demo/
+
+# 打包产物 —— DMG 一个 122MB, 仓库不是发布渠道(见 docs/RELEASE.md)
+release/
+packages/apps/console/release/
+
+# 构建产物：编译出来的二进制与 Python 缓存不进版本控制
+# (它们还会把编译机的绝对路径烤进去)
+go/cmd/neox-console/neox-console
+__pycache__/
+*.pyc
+node_modules/
+
+# 语音模型不进仓库：不是本项目的作品，随仓分发等于替上游做授权声明。
+# 用 mobile/tool/fetch-models.sh 取，校验和在脚本里。
+mobile/assets/asr/
+mobile/assets/asr2/

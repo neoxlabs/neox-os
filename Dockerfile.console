@@ -1,0 +1,107 @@
+# NeoX OS 完整镜像 —— neox-console(服务端 + 内嵌 Web UI).
+#
+#   docker run 起来就是一台自托管的 OS: 浏览器打开 7717 端口即完整界面.
+#   与根目录 Dockerfile(neox-init 约束层)不是一回事 —— 那是 bot 的运行环境,
+#   这是 OS 本体.
+#
+#   两种形态, 一份配方:
+#     瘦身版(缺省, ~170MB): docker build -f Dockerfile.console -t neox-os .
+#     全家桶(带 node, ~700MB): docker build -f Dockerfile.console --target full -t neox-os:full .
+#   运行:  docker run -d -p 7717:7717 -v neox-os-data:/root/.neox-os neox-os
+#          docker logs <容器> 里有带 token 的访问地址
+
+# ── 层 1 · 前端 ────────────────────────────────────────────
+# --platform=$BUILDPLATFORM: 构建工具跑在本机架构上, 产物(静态文件/交叉编译的
+# Go 二进制)按目标架构出 —— 多架构构建不必忍受 QEMU 模拟的速度
+FROM --platform=$BUILDPLATFORM node:22-bookworm AS ui
+WORKDIR /ui
+# Electron 只是桌面壳的依赖, 镜像里用不上 —— 跳过它上百 MB 的二进制下载
+ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
+RUN npm config set registry https://registry.npmmirror.com
+COPY packages/apps/console/package.json packages/apps/console/package-lock.json ./
+RUN npm ci
+COPY packages/apps/console/ ./
+RUN npm run build
+
+# ── 层 2 · 编译 ────────────────────────────────────────────
+FROM --platform=$BUILDPLATFORM golang:1.25-bookworm AS build
+ARG TARGETOS TARGETARCH
+ENV GOPROXY=https://goproxy.cn,direct
+WORKDIR /src/go
+COPY go/go.mod go/go.sum ./
+RUN go mod download
+COPY go ./
+# 界面打进二进制 —— 与 os:pack 的做法一致(见 webui.go)
+COPY --from=ui /ui/dist ./cmd/neox-console/webui
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build -trimpath -ldflags="-s -w" -o /out/neox-console ./cmd/neox-console
+
+# ── 层 3a · 运行时(全家桶, --target full 才构建) ────────────
+# Ubuntu + node/npm + python 全套, 解压约 700MB. 适合 bot 常写前端的人.
+FROM ubuntu:24.04 AS full
+
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+RUN sed -i \
+        's|http://archive.ubuntu.com/ubuntu|https://mirrors.aliyun.com/ubuntu|g; s|http://security.ubuntu.com/ubuntu|https://mirrors.aliyun.com/ubuntu|g; s|http://ports.ubuntu.com/ubuntu-ports|https://mirrors.aliyun.com/ubuntu-ports|g' \
+        /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true
+RUN apt-get -o Acquire::Retries=5 update && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
+        ca-certificates git iproute2 util-linux \
+        python3 python3-pip python3-venv python3-pytest \
+        nodejs npm \
+        curl jq unzip ripgrep tzdata \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+COPY --from=build /out/neox-console /usr/local/bin/neox-console
+ENV NEOX_OBSERVE_ADDR=0.0.0.0:7717 \
+    NEOX_ASK_MODE=never \
+    PIP_BREAK_SYSTEM_PACKAGES=1 \
+    LANG=C.UTF-8
+VOLUME /root/.neox-os
+EXPOSE 7717
+ENTRYPOINT ["/usr/local/bin/neox-console"]
+
+# ── 层 3b · 运行时(瘦身版, 缺省) ────────────────────────────
+# Alpine 而不是 Ubuntu: OS 本体是**静态 Go 二进制**, 不挑 libc ——
+# 底座 8MB 对 110MB. 全家桶(Ubuntu + node/npm)解压 707MB, 其中 Node
+# 生态一家占了约 200MB、git 在 Debian 系还要拖一整套 perl(80MB).
+# 这个系统是 Go 写的, 镜像里不该住着一个 NodeJS.
+# bot 真要用 node 时自己 `apk add nodejs npm`, 一条命令的事.
+FROM alpine:3.21
+
+RUN sed -i 's|dl-cdn.alpinelinux.org|mirrors.aliyun.com|g' /etc/apk/repositories
+
+# git: 工件以 git 为准(worktree 协作).  iproute2/util-linux: confine 层.
+# python3/pip/pytest + bash + curl/jq/ripgrep: bot 的最小工具链 ——
+# 不装的话, 派下去的第一摊活会变成 bot 自己装十分钟环境(真机抓到过).
+# coreutils/grep/sed/findutils: 换掉 busybox 的精简版 —— bot 生成的命令
+# 是按 GNU 语法写的(sed -i、grep -P、date 格式), 精简版会在奇怪的地方咬人.
+# tzdata: 没有它, 子进程拿到 TZ=Asia/Shanghai 会被 musl **静默当成 UTC** ——
+# 线上 bot 的 `date +%u` 因此差了 8 小时(见 agent/run.go childTZ).
+RUN apk add --no-cache \
+        ca-certificates git bash tzdata \
+        iproute2 util-linux \
+        python3 py3-pip py3-pytest \
+        curl jq ripgrep unzip \
+        coreutils grep sed findutils
+
+COPY --from=build /out/neox-console /usr/local/bin/neox-console
+
+# 容器里没有"本机浏览器", 观察口必须开给宿主 —— 这是镜像形态的显式决定.
+# token 仍然要凭 docker logs 拿, 不设即随机生成并持久化在数据卷里.
+#
+# NEOX_ASK_MODE=never: 镜像形态的缺省是**权限给足, 一次都不问**(含出网).
+# 容器本身就是隔离环境, 每一步审批只会把人问死. 要收紧: 设置页三档随时切,
+# 或起容器时改这个变量(bounds=越界才问 / always=每步都问).
+# 用户在设置里存过的口径优先于这个缺省.
+# PIP_BREAK_SYSTEM_PACKAGES: pip 默认拒绝往系统环境装包(PEP 668).
+# 容器本身就是隔离环境, 这道闸在这儿只会把 bot 的 pip install 变成一句报错.
+ENV NEOX_OBSERVE_ADDR=0.0.0.0:7717 \
+    NEOX_ASK_MODE=never \
+    PIP_BREAK_SYSTEM_PACKAGES=1 \
+    LANG=C.UTF-8
+
+# 账本、token、provider 配置、worktrees 全在这 —— 不挂卷 = 删容器即失忆
+VOLUME /root/.neox-os
+
+EXPOSE 7717
+
+ENTRYPOINT ["/usr/local/bin/neox-console"]

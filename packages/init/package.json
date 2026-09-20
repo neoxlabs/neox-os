@@ -1,0 +1,16 @@
+{
+  "name": "@neox-os/init",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "neox-init — 进程表 / 事件日志 / 决策登记 / 能力保护",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@neox-os/abi": "0.0.1",
+    "@neox-os/confine": "0.0.1"
+  }
+}

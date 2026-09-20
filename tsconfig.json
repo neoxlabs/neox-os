@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": false,
+    "noImplicitOverride": true,
+    "noUnusedLocals": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@neox-os/abi": ["packages/abi/src/index.ts"],
+      "@neox-os/boot": ["packages/boot/src/index.ts"],
+      "@neox-os/confine": ["packages/confine/src/index.ts"],
+      "@neox-os/engine": ["packages/engine/src/index.ts"],
+      "@neox-os/init": ["packages/init/src/index.ts"]
+    }
+  },
+  "include": ["packages/*/src/**/*.ts", "tools/**/*.ts"]
+}

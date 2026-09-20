@@ -1,0 +1,74 @@
+{
+  "name": "@neox-os/console",
+  "private": true,
+  "type": "module",
+  "description": "NeoxOS 控制台 —— 事件流的一个普通订阅者。没有特权。",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "start": "electron .",
+    "app": "NEOX_CONSOLE_DEV_URL=http://127.0.0.1:5310 electron .",
+    "os:build": "(cd ../../../go && go build -o ../packages/apps/console/electron/bin/neox-console ./cmd/neox-console)",
+    "os:pack": "npm run build && rm -rf ../../../go/cmd/neox-console/webui && mkdir -p ../../../go/cmd/neox-console/webui && cp -R dist/. ../../../go/cmd/neox-console/webui/ && touch ../../../go/cmd/neox-console/webui/.gitkeep && npm run os:build",
+    "dmg": "npm run os:pack && electron-builder --mac dmg --arm64"
+  },
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^40.10.6",
+    "electron-builder": "^26.15.3",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0"
+  },
+  "main": "electron/main.cjs",
+  "version": "1.0.1",
+  "build": {
+    "appId": "cloud.neox.os",
+    "productName": "NeoX OS",
+    "copyright": "Copyright © 2026 NeoX",
+    "directories": {
+      "output": "release",
+      "buildResources": "electron"
+    },
+    "files": [
+      "electron/main.cjs",
+      "electron/preload.cjs",
+      "electron/icon.png",
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "electron/bin/neox-console",
+        "to": "os/neox-console"
+      }
+    ],
+    "asar": true,
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.developer-tools",
+      "icon": "electron/icon.png",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "electron/entitlements.mac.plist",
+      "entitlementsInherit": "electron/entitlements.mac.plist",
+      "notarize": false
+    },
+    "dmg": {
+      "artifactName": "NeoX-OS-${version}-arm64.dmg"
+    }
+  }
+}

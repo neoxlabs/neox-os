@@ -1,0 +1,11 @@
+{
+  "name": "@neox-os/engine",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "全机唯一的执行引擎 — 上下文页表 / 确定性组装 / 前缀共享",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": { "@neox-os/abi": "0.0.1" }
+}

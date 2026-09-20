@@ -1,0 +1,123 @@
+/**
+ * NeoX Kit — bot 搭前端的样式基底.
+ *
+ *   为什么存在: 用户说"UI 要好看", bot 只能自由发挥 —— 每个 demo
+ *   都长一副没有设计师的样子. 与其让模型每次现编一套设计系统,
+ *   不如给一套现成的: 变量 + 基础组件, 引进去就有下限.
+ *
+ *   用法(bot 照抄):
+ *     1. 把本文件拷进项目(比如 src/neox-kit.css), 全局引入
+ *     2. 页面容器给 class="nx", 组件用下面的 nx-* 类
+ *     3. 换主色只改 --nx-accent 一处
+ */
+
+.nx {
+  /* ── 令牌: 全部从这里改, 别写死色值 ── */
+  --nx-bg: #0e1013;
+  --nx-panel: #16191f;
+  --nx-panel-2: #1c2028;
+  --nx-line: rgb(255 255 255 / .07);
+  --nx-text: #e8eaf0;
+  --nx-text-2: #a9b0c0;
+  --nx-text-3: #6b7280;
+  --nx-accent: #6366f1;
+  --nx-accent-soft: rgb(99 102 241 / .16);
+  --nx-ok: #34d399;
+  --nx-bad: #f87171;
+  --nx-warn: #fbbf24;
+  --nx-radius: 14px;
+  --nx-radius-s: 9px;
+  --nx-shadow: 0 1px 2px rgb(0 0 0 / .3), 0 8px 24px rgb(0 0 0 / .25);
+
+  background: var(--nx-bg);
+  color: var(--nx-text);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC",
+    "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── 布局 ── */
+.nx-shell { display: flex; min-height: 100vh; }
+.nx-side {
+  flex: 0 0 220px; padding: 20px 14px; background: var(--nx-panel);
+  border-right: 1px solid var(--nx-line);
+}
+.nx-main { flex: 1; min-width: 0; padding: 28px 32px; }
+.nx-grid { display: grid; gap: 16px; }
+.nx-grid--4 { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.nx-grid--2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+
+/* ── 卡片 ── */
+.nx-card {
+  background: var(--nx-panel); border: 1px solid var(--nx-line);
+  border-radius: var(--nx-radius); padding: 18px 20px; box-shadow: var(--nx-shadow);
+}
+.nx-card h3 { margin: 0 0 10px; font-size: 13px; font-weight: 600; color: var(--nx-text-2); }
+
+/* KPI 指标卡: 数字要大, 标签要淡 */
+.nx-kpi { display: grid; gap: 4px; }
+.nx-kpi b { font-size: 26px; font-weight: 700; letter-spacing: -.02em; }
+.nx-kpi small { color: var(--nx-text-3); font-size: 12px; }
+.nx-kpi--up b { color: var(--nx-ok); }
+.nx-kpi--down b { color: var(--nx-bad); }
+
+/* ── 按钮 ── */
+.nx-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 16px; border: 1px solid var(--nx-line); border-radius: var(--nx-radius-s);
+  background: var(--nx-panel-2); color: var(--nx-text); font: inherit; font-size: 13px;
+  cursor: pointer; transition: background .15s, transform .05s;
+}
+.nx-btn:hover { background: #232836; }
+.nx-btn:active { transform: translateY(1px); }
+.nx-btn--primary { background: var(--nx-accent); border-color: transparent; color: #fff; }
+.nx-btn--primary:hover { background: #5458e8; }
+.nx-btn--ghost { background: transparent; }
+.nx-btn--danger { background: transparent; border-color: rgb(248 113 113 / .35); color: var(--nx-bad); }
+
+/* ── 表单 ── */
+.nx-input, .nx-select {
+  width: 100%; padding: 9px 12px; border: 1px solid var(--nx-line);
+  border-radius: var(--nx-radius-s); background: var(--nx-panel-2);
+  color: var(--nx-text); font: inherit; font-size: 13px; outline: none;
+}
+.nx-input:focus, .nx-select:focus { border-color: var(--nx-accent); box-shadow: 0 0 0 3px var(--nx-accent-soft); }
+.nx-label { display: block; margin: 0 0 6px; font-size: 12px; color: var(--nx-text-2); }
+.nx-field { margin-bottom: 14px; }
+
+/* ── 表格 ── */
+.nx-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.nx-table th {
+  text-align: left; padding: 10px 12px; color: var(--nx-text-3);
+  font-weight: 500; font-size: 12px; border-bottom: 1px solid var(--nx-line);
+}
+.nx-table td { padding: 11px 12px; border-bottom: 1px solid var(--nx-line); }
+.nx-table tbody tr:hover { background: rgb(255 255 255 / .02); }
+
+/* ── 标签/徽章 ── */
+.nx-tag {
+  display: inline-block; padding: 2px 9px; border-radius: 999px;
+  font-size: 11.5px; background: var(--nx-panel-2); color: var(--nx-text-2);
+}
+.nx-tag--ok { background: rgb(52 211 153 / .14); color: var(--nx-ok); }
+.nx-tag--bad { background: rgb(248 113 113 / .14); color: var(--nx-bad); }
+.nx-tag--accent { background: var(--nx-accent-soft); color: var(--nx-accent); }
+
+/* ── 弹窗 ── */
+.nx-scrim {
+  position: fixed; inset: 0; display: grid; place-items: center;
+  background: rgb(0 0 0 / .5); backdrop-filter: blur(2px); z-index: 50;
+}
+.nx-dialog {
+  width: min(480px, calc(100vw - 48px)); background: var(--nx-panel);
+  border: 1px solid var(--nx-line); border-radius: var(--nx-radius);
+  padding: 22px 24px; box-shadow: var(--nx-shadow);
+}
+.nx-dialog h2 { margin: 0 0 16px; font-size: 16px; }
+
+/* ── 杂项 ── */
+.nx-muted { color: var(--nx-text-3); }
+.nx-hr { border: 0; border-top: 1px solid var(--nx-line); margin: 16px 0; }
+.nx-empty { padding: 40px; text-align: center; color: var(--nx-text-3); }
