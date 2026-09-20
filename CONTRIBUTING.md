@@ -63,6 +63,21 @@ adding a unit test.
 
 Say what changed and why it matters to a user of the system. Both English and Chinese are fine.
 
+## How this repository is maintained
+
+This tree is generated from a private source repository that also holds the hosted
+product's account, subscription and gateway code. That code is not part of the open
+release; behaviour that differs between the two goes through a capability contract
+(`packages/apps/console/src/cloud/`, `mobile/lib/cloud/`), and the open build registers
+a no-op implementation. Everything else is the same code.
+
+Pull requests are welcome and are merged here in the normal way. Merged changes are
+carried back into the private source, so a contribution does not get overwritten by the
+next sync.
+
+Push access is limited to maintainers. Fork the repository, open a pull request against
+`main`, and expect one review.
+
 ## Code of conduct
 
 This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md).

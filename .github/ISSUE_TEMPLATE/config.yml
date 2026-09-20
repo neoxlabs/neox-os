@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security issue
+    url: https://github.com/neoxlabs/OpenNeoxOS/security/advisories/new
+    about: Please report vulnerabilities privately, not as a public issue. See SECURITY.md.
+  - name: Downloads and docs
+    url: https://os.neox-dev.com
+    about: macOS build, Docker image, and product documentation.
