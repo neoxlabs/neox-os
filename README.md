@@ -1,9 +1,10 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="packages/apps/console/src/assets/wordmark-white.png">
-  <img src="packages/apps/console/src/assets/wordmark-dark.png" alt="NeoX OS" height="52">
-</picture>
+<!-- One colored wordmark, deliberately not a <picture>: prefers-color-scheme follows the
+     operating system, while the GitHub theme is an account setting. When the two disagree
+     the near-black wordmark lands on a dark page and the word disappears. The monochrome
+     wordmark-dark / wordmark-white variants stay for in-app use. -->
+<img src="packages/apps/console/src/assets/wordmark-color.png" alt="NeoX OS" height="52">
 
 **A self-hosted operating system for AI agents**
 

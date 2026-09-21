@@ -1,9 +1,9 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="packages/apps/console/src/assets/wordmark-white.png">
-  <img src="packages/apps/console/src/assets/wordmark-dark.png" alt="NeoX OS" height="52">
-</picture>
+<!-- 单张彩色字标, 不走 <picture>: prefers-color-scheme 跟随操作系统, 而 GitHub 主题是
+     账号设置, 两者可以相反 —— 一相反就会把近黑色字标贴到深色页面上, 字整个看不见。
+     单色的 wordmark-dark / wordmark-white 留给应用内使用。 -->
+<img src="packages/apps/console/src/assets/wordmark-color.png" alt="NeoX OS" height="52">
 
 **个人 AI Agent 操作系统**
 
